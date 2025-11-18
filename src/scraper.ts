@@ -2,25 +2,23 @@ import * as path from "path";
 import * as fs from "fs";
 import * as puppeteer from "puppeteer";
 import chalk from "chalk";
-import { AppConfig } from "./ConfigHandler";
-import { ISongData } from "./ISongData";
-import { convertWavToFlacAndAlac } from "./file_convert";
-import { TDownloadStatus } from "./TDownloadStatus";
-import { ProcessMetadata } from "./MetadataHandler";
-const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+import { AppConfig } from "./ConfigHandler.js";
+import { ISongData } from "./ISongData.js";
+import { convertWavToFlacAndAlac } from "./file_convert.js";
+import { TFileStatus } from "./TDownloadStatus.js";
+import { ProcessMetadata } from "./MetadataHandler.js";
+import * as readlinePs from "readline/promises";
+import { GlobalPageMethods } from "./pagemethods.js";
+export const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 export class Scraper {
-  constructor() {
-    this.Initialize().then(() => {
-      console.log("Scraper initialized");
-    });
-  }
+  constructor() {}
   page!: puppeteer.Page;
   async Initialize() {
-    const tmpDir = path.parse(AppConfig.chromeTempUserDataDir).dir;
+    const tmpDir = path.parse(AppConfig.chromeTempUserDataDirPath).dir;
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });
     }
-    
+
     if (!this.browser) {
       console.log("Connecting to the browser...");
       this.browser = await puppeteer.launch({
@@ -43,150 +41,15 @@ export class Scraper {
       }
     }
     if (!this.page) {
-      console.error(chalk.redBright, "Could not find the target page.");
-      throw new Error("Could not find the target page.");
+      console.error(chalk.redBright, "Could not find the target this.page.");
+      throw new Error("Could not find the target this.page.");
+    } else {
+      console.log("Scraper initialized");
     }
   }
 
-  async scrollSongIntoView(
-    page: puppeteer.Page,
-    scrollContainer: puppeteer.ElementHandle<HTMLDivElement>,
-    clipId: string
-  ): Promise<puppeteer.ElementHandle | null> {
-    const songSelector = `div[data-clip-id="${clipId}"]`;
-    let songRow = await scrollContainer.$(songSelector);
-
-    if (songRow) {
-      await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
-      await delay(500);
-      return songRow;
-    }
-
-    console.log(`  -> Song ${clipId} not visible. Scrolling to find...`);
-    let stallCount = 0;
-    while (stallCount < 2) {
-      await scrollContainer.evaluate((el) => {
-        el.scrollTop += el.clientHeight * 0.8;
-      });
-      await delay(1500);
-
-      songRow = await scrollContainer.$(songSelector);
-      if (songRow) {
-        await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
-        await delay(500);
-        console.log(`  -> Found ${clipId} after scrolling.`);
-        return songRow;
-      }
-
-      const isAtBottom = await scrollContainer.evaluate(
-        (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
-      );
-
-      if (isAtBottom) {
-        console.log("  -> Reached bottom. Resetting to top for another pass.");
-        await scrollContainer.evaluate((el) => el.scrollTo(0, 0));
-        stallCount++;
-        await delay(1500);
-      }
-    }
-    console.error(`  -> Could not find song ${clipId} after scrolling.`);
-    return null;
-  }
-  async clickVisibleMoreButton(
-    page: puppeteer.Page,
-    clipId: string
-  ): Promise<boolean> {
-    const moreButtonSelector = `div[data-clip-id="${clipId}"] button[aria-label="More menu contents"]`;
-    const buttons = await page.$$(moreButtonSelector);
-    if (buttons.length === 0) return false;
-
-    for (const button of buttons) {
-      if (await button.isIntersectingViewport()) {
-        await button.click();
-        return true;
-      }
-    }
-    return false;
-  }
-
-  async clickNextPageButton(
-    page: puppeteer.Page | undefined
-  ): Promise<boolean> {
-    if (!page) {
-      return false;
-    }
-    //for whatever reason next does not have an aria label but previous does
-    const nextButton = puppeteer.Locator.race([
-      page.locator(
-        "div.md\\:flex > div > div.flex-col > div button:nth-of-type(2) > svg"
-      ),
-      page.locator(
-        '::-p-xpath(//*[@id=\\"main-container\\"]/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/button[2]/svg)'
-      ),
-      page.locator(
-        ":scope >>> div.md\\:flex > div > div.flex-col > div button:nth-of-type(2) > svg"
-      ),
-    ]).setTimeout(5000);
-    if (nextButton) {
-      await nextButton.click();
-      return true;
-    }
-    return false;
-  }
-
-  async clickPreviousPageButton(page: puppeteer.Page): Promise<boolean> {
-    const nextButton = puppeteer.Locator.race([
-      page.locator(
-        '::-p-aria(Previous Page) >>>> ::-p-aria([role=\\"image\\"])'
-      ),
-      page.locator(
-        "div.md\\:flex > div > div.flex-col > div button:nth-of-type(1) > svg"
-      ),
-      page.locator(
-        '::-p-xpath(//*[@id=\\"main-container\\"]/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/button[1]/svg)'
-      ),
-      page.locator(
-        ":scope >>> div.md\\:flex > div > div.flex-col > div button:nth-of-type(1) > svg"
-      ),
-    ]).setTimeout(5000);
-    if (nextButton) {
-      await nextButton.click();
-      return true;
-    }
-    return false;
-  }
-
-  async waitUntilDownload(
-    session: puppeteer.CDPSession,
-    fileName: string = ""
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const handler = (e: puppeteer.Protocol.Browser.DownloadProgressEvent) => {
-        if (e.state === "completed") {
-          // Remove listener before resolving
-          session.off("Browser.downloadProgress", handler);
-
-          const downloadPath = path.resolve(__dirname, "downloads", "wav");
-          if (e.filePath) {
-            const originalFileName = e.filePath;
-            const newFileName = `${fileName}.wav`;
-            const newFilePath = path.join(downloadPath, newFileName);
-            fs.renameSync(originalFileName, newFilePath);
-            console.log(`    ->File renamed from ${e.guid} to ${newFileName}`);
-          }
-
-          resolve(fileName);
-        } else if (e.state === "canceled") {
-          // Remove listener before rejecting
-          session.off("Browser.downloadProgress", handler);
-          reject(new Error("Download was canceled"));
-        }
-      };
-
-      // Attach listener
-      session.on("Browser.downloadProgress", handler);
-    });
-  }
+  
+  
 
   browser!: puppeteer.Browser;
   exhaustedSearch: boolean = false;
@@ -195,7 +58,7 @@ export class Scraper {
       const session = await this.browser.target().createCDPSession();
       await session.send("Browser.setDownloadBehavior", {
         behavior: "allowAndName",
-        downloadPath: AppConfig.downloadRootDirectory,
+        downloadPath: AppConfig.downloadRootDirectoryPath,
         eventsEnabled: true,
       });
       session.removeAllListeners("Browser.downloadWillBegin");
@@ -219,7 +82,18 @@ export class Scraper {
         }
       });
       console.log(`Successfully connected to page: ${this.page.url()}`);
-
+      if (this.page.url().includes("accounts.suno.com")) {
+        const rl = readlinePs.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        await rl.question(
+          "Login required. Please login on chrome and press enter when logged in "
+        );
+        rl.close();
+        await this.page.goto("https://suno.com/me");
+        console.log(`Successfully connected to page: ${this.page.url()}`);
+      }
       // --- LOAD AND PREPARE DATA ---
       const allSongs = new Map<string, ISongData>();
       const songsDir = path.join(__dirname, "songs");
@@ -239,7 +113,7 @@ export class Scraper {
       const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
       await this.page.waitForSelector(scrollContainerSelector);
       //@ts-ignore
-      const scrollContainers = await page.$$<HTMLDivElement>(
+      const scrollContainers = await this.page.$$<HTMLDivElement>(
         scrollContainerSelector
       );
       const scrollContainer = scrollContainers?.[1];
@@ -287,8 +161,8 @@ export class Scraper {
                 thumbnail,
                 model,
                 duration,
-                mp3Status: "DOWNLOADED" as TDownloadStatus,
-                wavStatus: "PENDING" as TDownloadStatus,
+                mp3Status: "DOWNLOADED" as TFileStatus,
+                wavStatus: "PENDING" as TFileStatus,
                 liked: liked,
               };
             })
@@ -320,7 +194,7 @@ export class Scraper {
           this.exhaustedSearch = true;
         }
 
-        if (!(await this.clickNextPageButton(this.page))) {
+        if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
           console.log("--- All songs discoverd. No more pages found. ---");
           return;
         } else {
@@ -346,7 +220,7 @@ export class Scraper {
         );
         const songObject = allSongs.get(song.clipId)!;
 
-        const songRow = await this.scrollSongIntoView(
+        const songRow = await GlobalPageMethods.scrollSongIntoView(
           this.page,
           scrollContainer as puppeteer.ElementHandle<HTMLDivElement>,
           song.clipId
@@ -366,22 +240,22 @@ export class Scraper {
           songObject.mp3Status = "DOWNLOADED"; //wav only
           // try {
           //     console.log('  -> Downloading MP3...');
-          //     await page.keyboard.press('Escape');
+          //     await this.page.keyboard.press('Escape');
           //     await delay(200);
           //     if (!(await clickVisibleMoreButton(page, song.clipId)))
           //         throw new Error('More button not clickable for MP3');
 
-          //     const downloadMenuItem = await page.waitForSelector(
+          //     const downloadMenuItem = await this.page.waitForSelector(
           //         "xpath///button[.//span[text()='Download']]",
           //         { visible: true, timeout: 5000 }
           //     );
           //     await downloadMenuItem.hover();
-          //     const mp3Button = await page.waitForSelector(
+          //     const mp3Button = await this.page.waitForSelector(
           //         'button[aria-label="MP3 Audio"]',
           //         { visible: true, timeout: 5000 }
           //     );
           //     await mp3Button.click();
-          //     await page.waitForSelector(
+          //     await this.page.waitForSelector(
           //         'button[aria-label="MP3 Audio"]',
           //         { hidden: true, timeout: 10000 }
           //     );
@@ -391,7 +265,7 @@ export class Scraper {
           // } catch (e: any) {
           //     console.error(`  -> MP3 download FAILED: ${e.message}`);
           //     songObject.mp3Status = 'FAILED';
-          //     await page.keyboard.press('Escape'); // Reset state
+          //     await this.page.keyboard.press('Escape'); // Reset state
           // }
           ProcessMetadata.saveSongsMetadata(allSongs); // Save status immediately
           await delay(1000);
@@ -414,7 +288,7 @@ export class Scraper {
               }
             }
 
-            await this.scrollSongIntoView(
+            await GlobalPageMethods.scrollSongIntoView(
               this.page,
               scrollContainer as puppeteer.ElementHandle<HTMLDivElement>,
               song.clipId
@@ -422,7 +296,7 @@ export class Scraper {
             await this.page.keyboard.press("Escape");
             await delay(200);
 
-            if (!(await this.clickVisibleMoreButton(this.page, song.clipId)))
+            if (!(await GlobalPageMethods.clickVisibleMoreButton(this.page, song.clipId)))
               throw new Error("More button not clickable for WAV");
 
             const downloadMenuItemWav = await this.page.waitForSelector(
@@ -468,7 +342,7 @@ export class Scraper {
               throw `Could not find download button element for ${song.clipId}`;
             }
 
-            await this.waitUntilDownload(session, songObject.clipId);
+            await GlobalPageMethods.waitUntilDownload(session, songObject.clipId);
             await this.page.waitForFunction(
               (xpath) =>
                 !document.evaluate(
@@ -496,8 +370,8 @@ export class Scraper {
         console.log(`--- Finished processing "${song.title}". Pausing... ---`);
       }
       await delay(3000);
-      console.log("--- All songs have been processed on this page. ---");
-      if (!(await this.clickNextPageButton(this.page))) {
+      console.log("--- All songs have been processed on this this.page. ---");
+      if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
         console.log("--- No more pages found. ---");
       } else {
         await delay(5000);

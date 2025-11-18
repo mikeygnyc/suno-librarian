@@ -2,7 +2,7 @@ import { IDownloadHandlingConfig } from "./IDownloadHandlingConfig";
 import { TAudioFormats } from "./TAudioFormats";
 
 export interface IAppConfig {
-  downloadRootDirectory: string;
+  downloadRootDirectoryPath: string;
   audioFormats: TAudioFormats[];
   saveImages: boolean;
   saveMetadataJSON: boolean;
@@ -12,12 +12,12 @@ export interface IAppConfig {
   deleteImagesAfterEmbedding: boolean;
   useSongTitleInFilenames: boolean;
   chromeExecutablePath: string;
-  chromeTempUserDataDir: string;
+  chromeTempUserDataDirPath: string;
   copyDownloadsToOtherLocation: IDownloadHandlingConfig[];
-  wavDirectory?: string;
-  mp3Directory?: string;
-  flacDirectory?: string;
-  alacDirectory?: string;
-  imageDirectory?: string;
-  metadataDirectory?: string;
+  wavDirectoryPath?: string;
+  mp3DirectoryPath?: string;
+  flacDirectoryPath?: string;
+  alacDirectoryPath?: string;
+  imageDirectoryPath?: string;
+  metadataDirectoryPath?: string;
 }

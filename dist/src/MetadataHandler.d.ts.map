@@ -1,0 +1,1 @@
+{"version":3,"file":"MetadataHandler.d.ts","sourceRoot":"","sources":["../../src/MetadataHandler.ts"],"names":[],"mappings":"AAIA,OAAO,EAAE,SAAS,EAAE,MAAM,aAAa,CAAC;AAGxC,cAAM,eAAe;IACnB,iBAAiB,CAAC,KAAK,EAAE,GAAG,CAAC,MAAM,EAAE,SAAS,CAAC;CAQhD;AAED,eAAO,IAAI,eAAe,iBAAwB,CAAC"}

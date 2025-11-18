@@ -1,11 +1,7 @@
-import * as puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
-import { convertWavToFlacAndAlac } from "./file_convert";
-import { ISongData } from "./ISongData";
-import { TDownloadStatus } from "./TDownloadStatus";
-import { AppConfig } from "./ConfigHandler";
-import { Importer } from "./Scraper";
+import { AppConfig } from "./ConfigHandler.js";
+import { Importer } from "./scraper.js";
 
 // A helper function for creating pauses
 
@@ -15,7 +11,7 @@ class Initializer {
     this.SetupCopyDirs();
   }
   setupDownloadDirs() {
-    const downloadRootDirectory = path.resolve(AppConfig.downloadRootDirectory);
+    const downloadRootDirectory = path.resolve(AppConfig.downloadRootDirectoryPath);
     if (!fs.existsSync(downloadRootDirectory)) {
       fs.mkdirSync(downloadRootDirectory, { recursive: true });
     }
@@ -31,27 +27,27 @@ class Initializer {
       if (!fs.existsSync(metadataDir)) {
         fs.mkdirSync(metadataDir, { recursive: true });
       }
-      AppConfig.metadataDirectory = metadataDir;
+      AppConfig.metadataDirectoryPath = metadataDir;
     }
     if (AppConfig.saveImages) {
       const imagesDir = path.join(downloadRootDirectory, "images");
       if (!fs.existsSync(imagesDir)) {
         fs.mkdirSync(imagesDir, { recursive: true });
       }
-      AppConfig.imageDirectory = imagesDir;
+      AppConfig.imageDirectoryPath = imagesDir;
     }
   }
   SetupCopyDirs() {
     if (AppConfig.copyDownloadsToOtherLocation.length > 0) {
       AppConfig.copyDownloadsToOtherLocation.forEach((copyConfig) => {
         copyConfig.formats.forEach((format) => {
-          const formatDir = path.join(copyConfig.directory, format);
+          const formatDir = path.join(copyConfig.directoryPath, format);
           if (!fs.existsSync(formatDir)) {
             fs.mkdirSync(formatDir, { recursive: true });
           }
         });
         if (AppConfig.saveImages) {
-          const imagesDir = path.join(copyConfig.directory, "images");
+          const imagesDir = path.join(copyConfig.directoryPath, "images");
           if (!fs.existsSync(imagesDir)) {
             fs.mkdirSync(imagesDir, { recursive: true });
           }
@@ -62,4 +58,8 @@ class Initializer {
 }
 
 let AppInitializer = new Initializer();
-Importer.scrapeAndDownload();
+async function dostart() {
+  await Importer.Initialize();
+  Importer.scrapeAndDownload();
+}
+dostart();

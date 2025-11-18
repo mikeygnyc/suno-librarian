@@ -5,23 +5,42 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "ts-node",
+            "name": "Launch",
             "type": "node",
             "request": "launch",
             "args": [
                 "${workspaceFolder}/src/index.ts"
             ],
             "runtimeVersion": "24.11.1",
-            "runtimeArgs": [
-                "-r",
-                "ts-node/register"
-            ],
             "cwd": "${workspaceRoot}",
             "outFiles": [
                 "${workspaceFolder}/dist/**/*.(m|c|)js",
                 "!**/node_modules/**"
             ],
-            "protocol": "inspector",
+            "sourceMaps": true,
+            "internalConsoleOptions": "openOnSessionStart",
+            "preLaunchTask": "tsc: build - tsconfig.json"
+        },
+        {
+            "name": "Launch (ESM, compiled)",
+            "type": "node",
+            "request": "launch",
+            // 👉 Run the compiled JS, not the TS
+            "program": "${workspaceFolder}/dist/index.js",
+            "runtimeVersion": "24.11.1",
+            "cwd": "${workspaceFolder}",
+            // This lets VS Code map breakpoints in TS → JS
+            "sourceMaps": true,
+            "outFiles": [
+                "${workspaceFolder}/dist/**/*.js"
+            ],
+            // Build first
+            "preLaunchTask": "tsc: build - tsconfig.json",
+            // Enable ESM mode in the debugger
+            "runtimeArgs": [
+                "--experimental-modules"
+            ],
+            "console": "externalTerminal" ,
             "internalConsoleOptions": "openOnSessionStart"
         }
     ]

@@ -2,6 +2,6 @@ import { TAudioFormats } from "./TAudioFormats";
 
 export interface IDownloadHandlingConfig {
   formats: TAudioFormats[];
-  directory: string;
+  directoryPath: string;
   retainOriginalFile: boolean;
 }

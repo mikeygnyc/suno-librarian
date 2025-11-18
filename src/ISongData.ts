@@ -1,4 +1,4 @@
-import { TDownloadStatus } from "./TDownloadStatus";
+import { TFileStatus } from "./TDownloadStatus";
 
 
 export interface ISongData {
@@ -8,8 +8,8 @@ export interface ISongData {
   thumbnail: string | null;
   model: string | null;
   duration: string | null;
-  mp3Status: TDownloadStatus;
-  wavStatus: TDownloadStatus;
+  mp3Status: TFileStatus;
+  wavStatus: TFileStatus;
   songUrl: string;
   liked: boolean;
 }

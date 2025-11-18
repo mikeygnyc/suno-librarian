@@ -1,2 +1,6 @@
-
-export type TDownloadStatus = "PENDING" | "DOWNLOADED" | "FAILED" | "SKIPPED";
+export type TFileStatus =
+  | "PENDING"
+  | "DOWNLOADED"
+  | "FAILED"
+  | "SKIPPED"
+  | "CREATED";

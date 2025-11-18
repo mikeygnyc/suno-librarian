@@ -10,7 +10,7 @@ class MetadataHandler {
     if (!AppConfig.saveMetadataJSON) {
       return;
     }
-    const metadataPath = path.join(AppConfig.downloadRootDirectory,"metadata", AppConfig.combinedSongsMetadataJsonFile);
+    const metadataPath = path.join(AppConfig.downloadRootDirectoryPath,"metadata", AppConfig.combinedSongsMetadataJsonFile);
     const songsArray = Array.from(songs.values());
     fs.writeFileSync(metadataPath, JSON.stringify(songsArray, null, 2));
   }
