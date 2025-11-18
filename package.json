@@ -1,5 +1,5 @@
 {
-    "name": "suno-download-helper",
+    "name": "suno-librarian",
     "version": "1.0.1",
     "description": "",
     "main": "index.js",
@@ -24,6 +24,7 @@
     },
     "dependencies": {
         "@esbuild/darwin-arm64": "^0.27.0",
+        "chalk": "^5.6.2",
         "node-fetch": "^3.3.2"
     }
 }
