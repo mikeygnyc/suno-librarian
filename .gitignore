@@ -147,3 +147,5 @@ downloads/
 songs_metadata.json
 failed.json
 nasloc
+.DS_Store
+scratch/
