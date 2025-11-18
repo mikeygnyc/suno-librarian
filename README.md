@@ -40,12 +40,6 @@ pnpm run dev
 
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
 
-## scrollContainer
 
-In the browser:
-
-```js
-document.querySelectorAll('div[id*="tabpanel-songs"]')[1].firstChild;
-```
 
 ## License under GPLv3.
