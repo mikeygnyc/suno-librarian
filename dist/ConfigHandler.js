@@ -43,16 +43,13 @@ const os = __importStar(require("os"));
 class ConfigHandler {
     constructor() {
         if (cfgfile) {
-            this.config = this.transformPathFields(cfgfile);
+            this.Config = this.transformPathFields(cfgfile);
         }
         else {
             throw new Error("Could not load config file");
         }
     }
-    get Config() {
-        return this.config;
-    }
-    config;
+    Config;
     transformPathFields(obj) {
         if (obj === null || typeof obj !== "object")
             return obj;
@@ -61,12 +58,26 @@ class ConfigHandler {
             const val = obj[key];
             if (key.includes("Path")) {
                 result[key] = path_1.default.resolve(val.replace("~", os.homedir));
-            }
-            else if (typeof val === "object" && val !== null) {
-                result[key] = this.transformPathFields(val);
+                //   } else if (typeof val === "object" && val !== null) {
+                //     result[key] = this.transformPathFields(val);
+                //   } else {
             }
             else {
-                result[key] = val;
+                if (key === "otherLocationConfig") {
+                    let tempArr = [];
+                    obj.otherLocationConfig.forEach((otherLocCfg) => {
+                        let newCfg = {
+                            formats: otherLocCfg.formats,
+                            retainOriginalFile: otherLocCfg.retainOriginalFile,
+                            directoryPath: path_1.default.resolve(otherLocCfg.directoryPath.replace("~", os.homedir)),
+                        };
+                        tempArr.push(newCfg);
+                    });
+                    result[key] = tempArr;
+                }
+                else {
+                    result[key] = val;
+                }
             }
         }
         return result;

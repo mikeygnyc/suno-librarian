@@ -41,6 +41,7 @@ const path_1 = __importDefault(require("path"));
 const scraper_1 = require("./scraper");
 const puppeteer = __importStar(require("puppeteer"));
 const fs_1 = __importDefault(require("fs"));
+const ConfigHandler_1 = require("./ConfigHandler");
 class PageMethods {
     constructor() { }
     async scrollSongIntoView(page, scrollContainer, clipId) {
@@ -124,7 +125,7 @@ class PageMethods {
                 if (e.state === "completed") {
                     // Remove listener before resolving
                     session.off("Browser.downloadProgress", handler);
-                    const downloadPath = path_1.default.resolve(__dirname, "downloads", "wav");
+                    const downloadPath = path_1.default.resolve(ConfigHandler_1.AppConfig.downloadRootDirectoryPath, "wav");
                     if (e.filePath) {
                         const originalFileName = e.filePath;
                         const newFileName = `${fileName}.wav`;

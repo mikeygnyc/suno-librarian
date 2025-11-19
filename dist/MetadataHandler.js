@@ -48,4 +48,7 @@ class MetadataHandler {
     }
 }
 exports.ProcessMetadata = new MetadataHandler();
+//tone for mp3
+//metaflac for flac
+//atomic parsley for m4a
 //# sourceMappingURL=MetadataHandler.js.map

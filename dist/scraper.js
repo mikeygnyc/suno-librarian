@@ -32,20 +32,16 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Importer = exports.Scraper = exports.delay = void 0;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const puppeteer = __importStar(require("puppeteer"));
-const chalk_1 = __importDefault(require("chalk"));
 const ConfigHandler_js_1 = require("./ConfigHandler.js");
-const file_convert_js_1 = require("./file_convert.js");
 const MetadataHandler_js_1 = require("./MetadataHandler.js");
 const readlinePs = __importStar(require("readline/promises"));
 const pagemethods_js_1 = require("./pagemethods.js");
+const FileHandler_js_1 = require("./FileHandler.js");
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 exports.delay = delay;
 class Scraper {
@@ -77,7 +73,7 @@ class Scraper {
             }
         }
         if (!this.page) {
-            console.error(chalk_1.default.redBright, "Could not find the target this.page.");
+            console.error("Could not find the target this.page.");
             throw new Error("Could not find the target this.page.");
         }
         else {
@@ -121,8 +117,7 @@ class Scraper {
             }
             // --- LOAD AND PREPARE DATA ---
             const allSongs = new Map();
-            const songsDir = path.join(__dirname, "songs");
-            const metadataPath = path.join(songsDir, "songs_metadata.json");
+            const metadataPath = path.join(ConfigHandler_js_1.AppConfig.downloadRootDirectoryPath, "metadata", "songs_metadata.json");
             if (fs.existsSync(metadataPath)) {
                 console.log("Found existing metadata file. Loading...");
                 try {
@@ -167,9 +162,19 @@ class Scraper {
                     thumbnail,
                     model,
                     duration,
-                    mp3Status: "DOWNLOADED",
+                    mp3Status: "PENDING",
                     wavStatus: "PENDING",
+                    alacStatus: "PENDING",
+                    flacStatus: "PENDING",
                     liked: liked,
+                    artist: null,
+                    lyrics: null,
+                    creationDate: null,
+                    weirdness: 50,
+                    styleStrength: 50,
+                    audioStrength: 25,
+                    remixParent: null,
+                    tags: [],
                 };
             })
                 .filter((song) => song.clipId));
@@ -302,7 +307,9 @@ class Scraper {
                         await this.page.waitForFunction((xpath) => !document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue, {}, modalTitleXPath.replace("xpath/", ""));
                         songObject.wavStatus = "DOWNLOADED";
                         console.log("  -> WAV download successful.");
-                        (0, file_convert_js_1.convertWavToFlacAndAlac)(songObject);
+                        FileHandler_js_1.Converter.convertWav(songObject).then(() => {
+                            FileHandler_js_1.Converter.copyToOtherLocations(songObject);
+                        });
                     }
                     catch (e) {
                         console.error(`  -> WAV download FAILED: ${e.message}`);

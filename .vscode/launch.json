@@ -1,31 +1,30 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-       
-        {
-            "name": "Launch (ESM, compiled)",
-            "type": "node",
-            "request": "launch",
-            // 👉 Run the compiled JS, not the TS
-            "program": "${workspaceFolder}/dist/index.js",
-            "runtimeVersion": "24.11.1",
-            "cwd": "${workspaceFolder}",
-            // This lets VS Code map breakpoints in TS → JS
-            "sourceMaps": true,
-            "outFiles": [
-                "${workspaceFolder}/dist/**/*.js"
-            ],
-            // Build first
-            "preLaunchTask": "tsc: build - tsconfig.json",
-            // Enable ESM mode in the debugger
-            "runtimeArgs": [
-                "--experimental-modules"
-            ],
-            "console": "integratedTerminal" ,
-            "internalConsoleOptions": "openOnSessionStart"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch (compiled ESM)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dist/index.js",
+      "cwd": "${workspaceFolder}",
+
+      // Allow ESM
+      "runtimeArgs": ["--enable-source-maps"],
+
+      // Correct: do NOT use runtimeVersion unless absolutely needed
+      // It causes nvm + env quoting issues
+      // "runtimeVersion": "24.11.1",
+
+      // VS Code can map TS breakpoints → JS
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "runtimeVersion": "24.11.1",
+      // Build first
+      "preLaunchTask": "tsc: build - tsconfig.json",
+
+      // This avoids the broken quoting in external terminals
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
 }

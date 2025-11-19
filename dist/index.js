@@ -23,7 +23,7 @@ class Initializer {
             if (!fs_1.default.existsSync(formatDir)) {
                 fs_1.default.mkdirSync(formatDir, { recursive: true });
             }
-            ConfigHandler_js_1.AppConfig[`${format}Directory`] = formatDir;
+            ConfigHandler_js_1.AppConfig[`${format}DirectoryPath`] = formatDir;
         });
         if (ConfigHandler_js_1.AppConfig.saveMetadataJSON) {
             const metadataDir = path_1.default.join(downloadRootDirectory, "metadata");
@@ -41,8 +41,8 @@ class Initializer {
         }
     }
     SetupCopyDirs() {
-        if (ConfigHandler_js_1.AppConfig.copyDownloadsToOtherLocation.length > 0) {
-            ConfigHandler_js_1.AppConfig.copyDownloadsToOtherLocation.forEach((copyConfig) => {
+        if (ConfigHandler_js_1.AppConfig.copyDownloadsToOtherLocation) {
+            ConfigHandler_js_1.AppConfig.otherLocationConfig.forEach((copyConfig) => {
                 copyConfig.formats.forEach((format) => {
                     const formatDir = path_1.default.join(copyConfig.directoryPath, format);
                     if (!fs_1.default.existsSync(formatDir)) {

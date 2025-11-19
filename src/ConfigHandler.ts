@@ -2,19 +2,18 @@ import * as cfgfile from "../config/config.json";
 import { IAppConfig } from "./IAppConfig";
 import path from "path";
 import * as os from "os";
+import { IDownloadHandlingConfig } from "./IDownloadHandlingConfig";
 class ConfigHandler {
   constructor() {
     if (cfgfile) {
-      this.config = this.transformPathFields(cfgfile as IAppConfig);
+      this.Config = this.transformPathFields(cfgfile as IAppConfig);
     } else {
       throw new Error("Could not load config file");
     }
   }
-  get Config(): IAppConfig {
-    return this.config;
-  }
-  config!: IAppConfig;
-  transformPathFields(obj: any): any {
+
+  Config!: IAppConfig;
+  transformPathFields(obj: IAppConfig): any {
     if (obj === null || typeof obj !== "object") return obj;
 
     const result: any = {};
@@ -28,7 +27,24 @@ class ConfigHandler {
         //     result[key] = this.transformPathFields(val);
         //   } else {
       } else {
-        result[key] = val;
+        if (key === "otherLocationConfig") {
+          let tempArr: IDownloadHandlingConfig[] = [];
+          obj.otherLocationConfig.forEach(
+            (otherLocCfg: IDownloadHandlingConfig) => {
+              let newCfg: IDownloadHandlingConfig = {
+                formats: otherLocCfg.formats,
+                retainOriginalFile: otherLocCfg.retainOriginalFile,
+                directoryPath: path.resolve(
+                  otherLocCfg.directoryPath.replace("~", os.homedir)
+                ),
+              };
+              tempArr.push(newCfg);
+            }
+          );
+          result[key]=tempArr;
+        } else {
+          result[key] = val;
+        }
       }
     }
 

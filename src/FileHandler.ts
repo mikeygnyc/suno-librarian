@@ -16,7 +16,7 @@ export class FileHandler {
     if (!fs.existsSync(wavFilePath)) {
       throw new Error(`WAV file not found for clipId ${metadata.clipId}`);
     }
-    AppConfig.audioFormats.forEach(async (format: TAudioFormats) => {
+    for(const format of AppConfig.audioFormats){
       if (format === "wav") {
         console.log(
           `        ->  WAV format selected, no conversion needed for ${metadata.clipId}`
@@ -52,8 +52,9 @@ export class FileHandler {
           );
         }
       }
-    });
-    return "";
+    }
+    
+    return;
   }
   async saveImage(metadata: ISongData) {
     let fullImagePath: string = "";
@@ -185,3 +186,5 @@ export class FileHandler {
     return retVal;
   }
 }
+
+export const Converter:FileHandler = new FileHandler();

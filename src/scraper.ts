@@ -1,14 +1,13 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as puppeteer from "puppeteer";
-import chalk from "chalk";
 import { AppConfig } from "./ConfigHandler.js";
 import { ISongData } from "./ISongData.js";
-import { convertWavToFlacAndAlac } from "./file_convert.js";
 import { TFileStatus } from "./TDownloadStatus.js";
 import { ProcessMetadata } from "./MetadataHandler.js";
 import * as readlinePs from "readline/promises";
 import { GlobalPageMethods } from "./pagemethods.js";
+import { Converter } from "./FileHandler.js";
 export const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 export class Scraper {
   constructor() {}
@@ -41,15 +40,12 @@ export class Scraper {
       }
     }
     if (!this.page) {
-      console.error(chalk.redBright, "Could not find the target this.page.");
+      console.error("Could not find the target this.page.");
       throw new Error("Could not find the target this.page.");
     } else {
       console.log("Scraper initialized");
     }
   }
-
-  
-  
 
   browser!: puppeteer.Browser;
   exhaustedSearch: boolean = false;
@@ -96,7 +92,11 @@ export class Scraper {
       }
       // --- LOAD AND PREPARE DATA ---
       const allSongs = new Map<string, ISongData>();
-      const metadataPath = path.join(AppConfig.downloadRootDirectoryPath, "metadata", "songs_metadata.json");
+      const metadataPath = path.join(
+        AppConfig.downloadRootDirectoryPath,
+        "metadata",
+        "songs_metadata.json"
+      );
 
       if (fs.existsSync(metadataPath)) {
         console.log("Found existing metadata file. Loading...");
@@ -165,6 +165,14 @@ export class Scraper {
                 alacStatus: "PENDING" as TFileStatus,
                 flacStatus: "PENDING" as TFileStatus,
                 liked: liked,
+                artist: null,
+                lyrics: null,
+                creationDate: null,
+                weirdness: 50,
+                styleStrength: 50,
+                audioStrength: 25,
+                remixParent: null,
+                tags: [],
               };
             })
             .filter((song) => song.clipId)
@@ -297,7 +305,12 @@ export class Scraper {
             await this.page.keyboard.press("Escape");
             await delay(200);
 
-            if (!(await GlobalPageMethods.clickVisibleMoreButton(this.page, song.clipId)))
+            if (
+              !(await GlobalPageMethods.clickVisibleMoreButton(
+                this.page,
+                song.clipId
+              ))
+            )
               throw new Error("More button not clickable for WAV");
 
             const downloadMenuItemWav = await this.page.waitForSelector(
@@ -343,7 +356,10 @@ export class Scraper {
               throw `Could not find download button element for ${song.clipId}`;
             }
 
-            await GlobalPageMethods.waitUntilDownload(session, songObject.clipId);
+            await GlobalPageMethods.waitUntilDownload(
+              session,
+              songObject.clipId
+            );
             await this.page.waitForFunction(
               (xpath) =>
                 !document.evaluate(
@@ -359,7 +375,9 @@ export class Scraper {
 
             songObject.wavStatus = "DOWNLOADED";
             console.log("  -> WAV download successful.");
-            convertWavToFlacAndAlac(songObject);
+            Converter.convertWav(songObject).then(() => {
+              Converter.copyToOtherLocations(songObject);
+            });
           } catch (e: any) {
             console.error(`  -> WAV download FAILED: ${e.message}`);
             songObject.wavStatus = "FAILED";

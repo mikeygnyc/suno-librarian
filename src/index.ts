@@ -22,7 +22,7 @@ class Initializer {
         if (!fs.existsSync(formatDir)) {
           fs.mkdirSync(formatDir, { recursive: true });
         }
-        (AppConfig as any)[`${format}Directory`] = formatDir;
+        (AppConfig as any)[`${format}DirectoryPath`] = formatDir;
     });
     if (AppConfig.saveMetadataJSON) {
       const metadataDir = path.join(downloadRootDirectory, "metadata");

@@ -41,7 +41,7 @@ export function escapeFfmpegMetadata(value: string | null): string {
 function createMetaDataArgs(metadata: ISongData, parsley: boolean): string[] {
   const rawArgs = [
     "-metadata",
-    `title=${escapeFfmpegMetadata(metadata.title)}`,
+    `title=${escapeFfmpegMetadata(metadata.title??"")}`,
     "-metadata",
     `comment=${escapeFfmpegMetadata(
       `Liked:${metadata.liked ? "Yes" : "No"}|Model:Suno ${
