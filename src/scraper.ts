@@ -96,8 +96,7 @@ export class Scraper {
       }
       // --- LOAD AND PREPARE DATA ---
       const allSongs = new Map<string, ISongData>();
-      const songsDir = path.join(__dirname, "songs");
-      const metadataPath = path.join(songsDir, "songs_metadata.json");
+      const metadataPath = path.join(AppConfig.downloadRootDirectoryPath, "metadata", "songs_metadata.json");
 
       if (fs.existsSync(metadataPath)) {
         console.log("Found existing metadata file. Loading...");
@@ -161,8 +160,10 @@ export class Scraper {
                 thumbnail,
                 model,
                 duration,
-                mp3Status: "DOWNLOADED" as TFileStatus,
+                mp3Status: "PENDING" as TFileStatus,
                 wavStatus: "PENDING" as TFileStatus,
+                alacStatus: "PENDING" as TFileStatus,
+                flacStatus: "PENDING" as TFileStatus,
                 liked: liked,
               };
             })

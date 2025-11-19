@@ -11,16 +11,18 @@ class Initializer {
     this.SetupCopyDirs();
   }
   setupDownloadDirs() {
-    const downloadRootDirectory = path.resolve(AppConfig.downloadRootDirectoryPath);
+    const downloadRootDirectory = path.resolve(
+      AppConfig.downloadRootDirectoryPath
+    );
     if (!fs.existsSync(downloadRootDirectory)) {
       fs.mkdirSync(downloadRootDirectory, { recursive: true });
     }
     AppConfig.audioFormats.forEach((format) => {
-      const formatDir = path.join(downloadRootDirectory, format);
-      if (!fs.existsSync(formatDir)) {
-        fs.mkdirSync(formatDir, { recursive: true });
-      }
-      (AppConfig as any)[`${format}Directory`] = formatDir;
+        const formatDir = path.join(downloadRootDirectory, format);
+        if (!fs.existsSync(formatDir)) {
+          fs.mkdirSync(formatDir, { recursive: true });
+        }
+        (AppConfig as any)[`${format}Directory`] = formatDir;
     });
     if (AppConfig.saveMetadataJSON) {
       const metadataDir = path.join(downloadRootDirectory, "metadata");
@@ -38,8 +40,8 @@ class Initializer {
     }
   }
   SetupCopyDirs() {
-    if (AppConfig.copyDownloadsToOtherLocation.length > 0) {
-      AppConfig.copyDownloadsToOtherLocation.forEach((copyConfig) => {
+    if (AppConfig.copyDownloadsToOtherLocation) {
+      AppConfig.otherLocationConfig.forEach((copyConfig) => {
         copyConfig.formats.forEach((format) => {
           const formatDir = path.join(copyConfig.directoryPath, format);
           if (!fs.existsSync(formatDir)) {

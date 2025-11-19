@@ -9,7 +9,10 @@ export interface ISongData {
   model: string | null;
   duration: string | null;
   mp3Status: TFileStatus;
+  flacStatus: TFileStatus;
+  alacStatus: TFileStatus;
   wavStatus: TFileStatus;
   songUrl: string;
   liked: boolean;
+  artistName: string | null;
 }

@@ -4,6 +4,8 @@ import { TAudioFormats } from "./TAudioFormats";
 export interface IAppConfig {
   downloadRootDirectoryPath: string;
   audioFormats: TAudioFormats[];
+  useSunoMp3FileIfAvailable: boolean;
+  convertedMp3BitrateKbps: number;
   saveImages: boolean;
   saveMetadataJSON: boolean;
   combinedSongsMetadataJsonFile: string;
@@ -13,7 +15,8 @@ export interface IAppConfig {
   useSongTitleInFilenames: boolean;
   chromeExecutablePath: string;
   chromeTempUserDataDirPath: string;
-  copyDownloadsToOtherLocation: IDownloadHandlingConfig[];
+  copyDownloadsToOtherLocation: boolean;
+  otherLocationConfig: IDownloadHandlingConfig[];
   wavDirectoryPath?: string;
   mp3DirectoryPath?: string;
   flacDirectoryPath?: string;

@@ -11,7 +11,12 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "tsc: build - tsconfig.json"
+			"label": "tsc: build - tsconfig.json",
+			"options": {
+				"env": {
+					"PATH": "/Users/mikegales/.nvm/versions/node/v24.11.1/bin/:${env:PATH}"
+				}
+			}
 		}
 	]
 }

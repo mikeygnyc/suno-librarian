@@ -2,6 +2,7 @@ import path from "path";
 import { delay } from "./scraper";
 import * as puppeteer from "puppeteer";
 import fs from "fs";
+import { AppConfig } from "./ConfigHandler";
 export class PageMethods {
   constructor() {}
   async scrollSongIntoView(
@@ -122,7 +123,7 @@ export class PageMethods {
           // Remove listener before resolving
           session.off("Browser.downloadProgress", handler);
 
-          const downloadPath = path.resolve(__dirname, "downloads", "wav");
+          const downloadPath = path.resolve(AppConfig.downloadRootDirectoryPath, "wav");
           if (e.filePath) {
             const originalFileName = e.filePath;
             const newFileName = `${fileName}.wav`;

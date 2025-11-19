@@ -1,6 +1,8 @@
 {
   "downloadRootDirectoryPath": "~/downloads/suno",
   "audioFormats": ["flac", "alac", "wav", "mp3"],
+  "useSunoMp3FileIfAvailable": true,
+  "convertedMp3BitrateKbps": 320,
   "saveImages": true,
   "saveMetadataJSON": true,
   "combinedSongsMetadataJsonFile": "songs_metadata.json",

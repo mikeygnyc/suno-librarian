@@ -23,9 +23,10 @@ class ConfigHandler {
       const val = (obj as any)[key];
 
       if (key.includes("Path")) {
-        result[key] = path.resolve(val.replace("~",os.homedir));
-      } else if (typeof val === "object" && val !== null) {
-        result[key] = this.transformPathFields(val);
+        result[key] = path.resolve(val.replace("~", os.homedir));
+        //   } else if (typeof val === "object" && val !== null) {
+        //     result[key] = this.transformPathFields(val);
+        //   } else {
       } else {
         result[key] = val;
       }
