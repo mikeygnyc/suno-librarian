@@ -1,1 +1,0 @@
-{"version":3,"file":"IDownloadHandlingConfig.d.ts","sourceRoot":"","sources":["../src/IDownloadHandlingConfig.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,aAAa,EAAE,MAAM,iBAAiB,CAAC;AAEhD,MAAM,WAAW,uBAAuB;IACtC,OAAO,EAAE,aAAa,EAAE,CAAC;IACzB,aAAa,EAAE,MAAM,CAAC;IACtB,kBAAkB,EAAE,OAAO,CAAC;CAC7B"}
