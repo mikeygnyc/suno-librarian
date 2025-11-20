@@ -1,5 +1,5 @@
 import path from "path";
-import { delay } from "./scraper";
+import { delay, Importer } from "./scraper";
 import * as puppeteer from "puppeteer";
 import fs from "fs";
 import { AppConfig } from "./ConfigHandler";
@@ -89,6 +89,7 @@ export class PageMethods {
       return true;
     }
     return false;
+    //returns false if
   }
 
   async clickPreviousPageButton(page: puppeteer.Page): Promise<boolean> {
@@ -111,6 +112,56 @@ export class PageMethods {
       return true;
     }
     return false;
+  }
+
+  async getCurrentPageNumber(page: puppeteer.Page): Promise<number> {
+    const pageNumXpath = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div[1]/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/div/span`;
+    const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
+    
+      await page.waitForSelector(scrollContainerSelector, { timeout: 30000 });
+   
+    const pageNumberElement = await page.$(`::-p-xpath(${pageNumXpath})`);
+    if (pageNumberElement) {
+      const pageNumberText = await pageNumberElement.evaluate((el) => el.textContent  );
+      if (pageNumberText) {
+        const pageNumber = parseInt(pageNumberText.trim());
+        if (!isNaN(pageNumber)) {
+          return pageNumber;
+        }
+      }
+    }
+    return 1; // Default to page 1 if not found
+  }
+  currentPage: number = 1;
+  async paginationOps(
+    page: puppeteer.Page,
+    goToNext: boolean
+  
+  ): Promise<boolean> {
+    let success: boolean = false;
+    if (goToNext) {
+      success = await this.clickNextPageButton(page);
+      if (success) {
+        console.log("  -> Navigated to next page.");
+      } else {
+        console.log("  -> Next page button not found.");
+      }
+    } else {
+      success = await this.clickPreviousPageButton(page);
+      if (success) {
+        console.log("  -> Navigated to previous page.");
+      } else {
+        console.log("  -> Previous page button not found.");
+      }
+    }
+    Importer.session.detach();
+    page.mainFrame()
+    Importer.session = await Importer.sessionStarter();
+    await Importer.findScrollContainer();
+    await delay(3000);
+    this.currentPage = await this.getCurrentPageNumber(page);
+    console.log(`  -> Current page is now ${this.currentPage}`);
+    return success;
   }
 
   async waitUntilDownload(

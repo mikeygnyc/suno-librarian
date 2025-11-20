@@ -8,9 +8,12 @@ export interface IAppConfig {
   convertedMp3BitrateKbps: number;
   saveImages: boolean;
   saveMetadataJSON: boolean;
+  saveMetadataSidecarFiles: boolean;
+  saveLyricsInTextFiles: boolean;
   combinedSongsMetadataJsonFile: string;
   embedMetadataInCovertedFiles: boolean;
   embedImagesInConvertedFiles: boolean;
+  embedLyricsInMetadata: boolean;
   deleteImagesAfterEmbedding: boolean;
   useSongTitleInFilenames: boolean;
   chromeExecutablePath: string;
@@ -22,5 +25,6 @@ export interface IAppConfig {
   flacDirectoryPath?: string;
   alacDirectoryPath?: string;
   imageDirectoryPath?: string;
+  lyricsDirectoryPath?: string;
   metadataDirectoryPath?: string;
 }

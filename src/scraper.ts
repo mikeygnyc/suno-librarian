@@ -49,34 +49,10 @@ export class Scraper {
 
   browser!: puppeteer.Browser;
   exhaustedSearch: boolean = false;
+  session!: puppeteer.CDPSession;
   async scrapeAndDownload() {
     try {
-      const session = await this.browser.target().createCDPSession();
-      await session.send("Browser.setDownloadBehavior", {
-        behavior: "allowAndName",
-        downloadPath: AppConfig.downloadRootDirectoryPath,
-        eventsEnabled: true,
-      });
-      session.removeAllListeners("Browser.downloadWillBegin");
-      session.removeAllListeners("Browser.downloadProgress");
-      session.on("Browser.downloadWillBegin", (event) => {
-        console.log(
-          `    -> Download will begin for browser guid ${event.guid} - ${event.suggestedFilename} from ${event.url}`
-        );
-      });
-
-      // Listen for downloadProgress event
-      session.on("Browser.downloadProgress", (event) => {
-        if (event.state === "completed") {
-          console.log(
-            `    -> Download completed for browser guid ${event.guid}`
-          );
-        } else if (event.state === "canceled") {
-          console.log(
-            `    -> Download canceled for browser guid  ${event.guid}`
-          );
-        }
-      });
+      await this.sessionStarter();
       console.log(`Successfully connected to page: ${this.page.url()}`);
       if (this.page.url().includes("accounts.suno.com")) {
         const rl = readlinePs.createInterface({
@@ -90,7 +66,9 @@ export class Scraper {
         await this.page.goto("https://suno.com/me");
         console.log(`Successfully connected to page: ${this.page.url()}`);
       }
+      this.getDataFromPage(this.session);
       // --- LOAD AND PREPARE DATA ---
+      console.log("Starting data loading...");
       const allSongs = new Map<string, ISongData>();
       const metadataPath = path.join(
         AppConfig.downloadRootDirectoryPath,
@@ -109,88 +87,19 @@ export class Scraper {
         console.log(`Loaded ${allSongs.size} songs from file.`);
       }
 
-      const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
-      await this.page.waitForSelector(scrollContainerSelector);
-      //@ts-ignore
-      const scrollContainers = await this.page.$$<HTMLDivElement>(
-        scrollContainerSelector
-      );
-      const scrollContainer = scrollContainers?.[1];
-      if (!scrollContainer)
-        throw new Error("Could not find the song list's scrollable container.");
-      console.log("Successfully identified the nested scroll container.");
+      let scrollContainer = await this.findScrollContainer();
 
       // Scrape page for all songs to discover new ones
-      const discoveredSongs: ISongData[] = await this.page.$$eval(
-        'div[data-testid="song-row"]',
-        (rows) =>
-          rows
-            .map((row) => {
-              const clipId = row.getAttribute("data-clip-id") || "";
-              const titleEl = row.querySelector("span[title] a span");
-              const title = titleEl ? titleEl.textContent : "Untitled";
-              const styleEl = row.querySelector(
-                "div.flex.flex-row > div[title]"
-              );
-              const style = styleEl?.getAttribute("title") || null;
-              const imgEl = row.querySelector('img[alt="Song Image"]');
-              const thumbnail =
-                imgEl?.getAttribute("data-src") ||
-                imgEl?.getAttribute("src") ||
-                null;
-              const durationEl = row.querySelector(
-                'div[aria-label="Play Song"] span.absolute'
-              );
-              const duration = durationEl?.textContent?.trim() || null;
-              const modelEl = Array.from(row.querySelectorAll("span")).find(
-                (el) => el.textContent?.trim().startsWith("v")
-              );
-              const model = modelEl?.textContent?.trim() || null;
-              const songUrl = `https://suno.com/song/${clipId}`;
-              const likedEl = row.querySelector(
-                'button[aria-label="Playbar: Like"]'
-              );
-              const liked =
-                likedEl?.classList.contains("text-foreground-primary") || false;
-              return {
-                title,
-                clipId,
-                songUrl,
-                style,
-                thumbnail,
-                model,
-                duration,
-                mp3Status: "PENDING" as TFileStatus,
-                wavStatus: "PENDING" as TFileStatus,
-                alacStatus: "PENDING" as TFileStatus,
-                flacStatus: "PENDING" as TFileStatus,
-                liked: liked,
-                artist: null,
-                lyrics: null,
-                creationDate: null,
-                weirdness: 50,
-                styleStrength: 50,
-                audioStrength: 25,
-                remixParent: null,
-                tags: [],
-              };
-            })
-            .filter((song) => song.clipId)
-      );
-      let foundNew: boolean = false;
-      // Merge discovered songs with existing data
-      discoveredSongs.forEach((song) => {
-        if (!allSongs.has(song.clipId)) {
-          allSongs.set(song.clipId, song);
-          foundNew = true;
-          this.exhaustedSearch = false;
-        }
-      });
+      await this.discoverSongs(allSongs, this.session);
 
-      // Create a queue of songs that actually need processing
+      // Create a queue of previously processed songs that need loading/downloading
       const songsToProcess = Array.from(allSongs.values()).filter(
         (song) =>
-          song.mp3Status !== "DOWNLOADED" || song.wavStatus !== "DOWNLOADED"
+          (AppConfig.useSunoMp3FileIfAvailable &&
+            AppConfig.audioFormats.includes("mp3") &&
+            song.mp3Status !== "DOWNLOADED" &&
+            song.mp3Status !== "CREATED") ||
+          song.wavStatus !== "DOWNLOADED"
       );
 
       if (songsToProcess.length === 0) {
@@ -209,7 +118,7 @@ export class Scraper {
         } else {
           console.log("Moving to next page");
           await delay(5000);
-          session.detach();
+          this.session.detach();
           await this.scrapeAndDownload();
         }
       }
@@ -357,7 +266,7 @@ export class Scraper {
             }
 
             await GlobalPageMethods.waitUntilDownload(
-              session,
+              this.session,
               songObject.clipId
             );
             await this.page.waitForFunction(
@@ -394,7 +303,7 @@ export class Scraper {
         console.log("--- No more pages found. ---");
       } else {
         await delay(5000);
-        session.detach();
+        this.session.detach();
         await this.scrapeAndDownload();
       }
     } catch (error) {
@@ -404,6 +313,137 @@ export class Scraper {
         await this.browser.disconnect();
         console.log("Disconnected from the browser.");
       }
+    }
+  }
+  async findScrollContainer() {
+    const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
+    await this.page.waitForSelector(scrollContainerSelector, {
+      timeout: 30000,
+    });
+    //@ts-ignore
+    const scrollContainers = await this.page.$$<HTMLDivElement>(
+      scrollContainerSelector
+    );
+    const scrollContainer = scrollContainers?.[1];
+    if (!scrollContainer)
+      throw new Error("Could not find the song list's scrollable container.");
+    console.log("Successfully identified the nested scroll container.");
+    return scrollContainer;
+  }
+
+  async sessionStarter() {
+    this.session = await this.browser.target().createCDPSession();
+    await this.session.send("Browser.setDownloadBehavior", {
+      behavior: "allowAndName",
+      downloadPath: AppConfig.downloadRootDirectoryPath,
+      eventsEnabled: true,
+    });
+    this.session.removeAllListeners("Browser.downloadWillBegin");
+    this.session.removeAllListeners("Browser.downloadProgress");
+    this.session.on("Browser.downloadWillBegin", (event) => {
+      console.log(
+        `    -> Download will begin for browser guid ${event.guid} - ${event.suggestedFilename} from ${event.url}`
+      );
+    });
+
+    // Listen for downloadProgress event
+    this.session.on("Browser.downloadProgress", (event) => {
+      if (event.state === "completed") {
+        console.log(`    -> Download completed for browser guid ${event.guid}`);
+      } else if (event.state === "canceled") {
+        console.log(`    -> Download canceled for browser guid  ${event.guid}`);
+      }
+    });
+    return this.session;
+  }
+
+  async getDataFromPage(session: puppeteer.CDPSession) {}
+
+  private async discoverSongs(
+    allSongs: Map<string, ISongData>,
+    session: puppeteer.CDPSession,
+    previousDiscoverCtr: number = 0
+  ) {
+    const rows = await this.page.$$('div[data-testid="song-row"]');
+    const discoveredSongs: ISongData[] = await this.page.$$eval(
+      'div[data-testid="song-row"]',
+      (rows) =>
+        rows
+          .map((row) => {
+            const clipId = row.getAttribute("data-clip-id") || "";
+            const titleEl = row.querySelector("span[title] a span");
+            const title = titleEl ? titleEl.textContent : "Untitled";
+            const styleEl = row.querySelector("div.flex.flex-row > div[title]");
+            const style = styleEl?.getAttribute("title") || null;
+            const imgEl = row.querySelector('img[alt="Song Image"]');
+            const thumbnail =
+              imgEl?.getAttribute("data-src") ||
+              imgEl?.getAttribute("src") ||
+              null;
+            const durationEl = row.querySelector(
+              'div[aria-label="Play Song"] span.absolute'
+            );
+            const duration = durationEl?.textContent?.trim() || null;
+            const modelEl = Array.from(row.querySelectorAll("span")).find(
+              (el) => el.textContent?.trim().startsWith("v")
+            );
+            const model = modelEl?.textContent?.trim() || null;
+            const songUrl = `https://suno.com/song/${clipId}`;
+            const likedEl = row.querySelector(
+              'button[aria-label="Playbar: Like"]'
+            );
+            const liked =
+              likedEl?.classList.contains("text-foreground-primary") || false;
+            return {
+              title,
+              clipId,
+              songUrl,
+              style,
+              thumbnail,
+              model,
+              duration,
+              mp3Status: "PENDING" as TFileStatus,
+              wavStatus: "PENDING" as TFileStatus,
+              alacStatus: "PENDING" as TFileStatus,
+              flacStatus: "PENDING" as TFileStatus,
+              liked: liked,
+              artist: null,
+              lyrics: null,
+              creationDate: null,
+              weirdness: 50,
+              styleStrength: 50,
+              audioStrength: 25,
+              remixParent: null,
+              tags: [],
+            };
+          })
+          .filter((song) => song.clipId)
+    );
+    // Merge discovered songs with existing data
+    let foundThisPass:number = 0;
+    discoveredSongs.forEach((song) => {
+      if (!allSongs.has(song.clipId)) {
+        allSongs.set(song.clipId, song);
+        foundThisPass++;
+      }
+    });
+    let totalDiscovered = foundThisPass + previousDiscoverCtr;
+    console.log(
+      `Discovered ${foundThisPass} songs on page ${GlobalPageMethods.currentPage}, ${totalDiscovered} total so far.`
+    );
+    ProcessMetadata.saveSongsMetadata(allSongs);
+    const nextPageFound = await GlobalPageMethods.paginationOps(
+      this.page,
+      true
+    );
+    if (nextPageFound) {
+      console.log(`Moving to next page to discover more songs..`);
+      await delay(5000);
+      await this.discoverSongs(allSongs, session, totalDiscovered);
+    } else {
+      console.log(
+        `Discovery complete. Total songs discovered: ${allSongs.size}.`
+      );
     }
   }
 }

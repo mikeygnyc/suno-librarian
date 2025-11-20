@@ -12,3 +12,4 @@ nasloc
 .DS_Store
 scratch/
 config/config.json
+dist
