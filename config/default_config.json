@@ -11,16 +11,17 @@
   "embedMetadataInCovertedFiles": true,
   "embedImagesInConvertedFiles": true,
   "embedLyricsInMetadata": true,
-  "deleteImagesAfterEmbedding": true,
+  "deleteLyricsAfterEmbedding": false,
+  "deleteImagesAfterEmbedding": false,
   "useSongTitleInFilenames": false,
   "chromeExecutablePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "chromeTempUserDataDirPath": "~/tmp/suno-chrome-user-data",
   "copyDownloadsToOtherLocation": true,
+  "retainOriginalsAfterCopying":true,
   "otherLocationConfig": [
     {
       "formats": ["flac", "alac", "wav", "mp3"],
-      "directoryPath": "~/music/suno/",
-      "retainOriginalFile": false
+      "directoryPath": "~/music/suno/"
     }
   ]
 }

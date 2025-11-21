@@ -15,16 +15,18 @@ export interface IAppConfig {
   embedImagesInConvertedFiles: boolean;
   embedLyricsInMetadata: boolean;
   deleteImagesAfterEmbedding: boolean;
+  deleteLyricsAfterEmbedding:boolean;
   useSongTitleInFilenames: boolean;
   chromeExecutablePath: string;
   chromeTempUserDataDirPath: string;
   copyDownloadsToOtherLocation: boolean;
+  retainOriginalsAfterCopying:boolean;
   otherLocationConfig: IDownloadHandlingConfig[];
   wavDirectoryPath?: string;
   mp3DirectoryPath?: string;
   flacDirectoryPath?: string;
   alacDirectoryPath?: string;
-  imageDirectoryPath?: string;
+  imagesDirectoryPath?: string;
   lyricsDirectoryPath?: string;
   metadataDirectoryPath?: string;
 }

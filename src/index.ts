@@ -36,7 +36,7 @@ class Initializer {
       if (!fs.existsSync(imagesDir)) {
         fs.mkdirSync(imagesDir, { recursive: true });
       }
-      AppConfig.imageDirectoryPath = imagesDir;
+      AppConfig.imagesDirectoryPath = imagesDir;
     }
     if (AppConfig.embedLyricsInMetadata||AppConfig.saveLyricsInTextFiles) {
       const lyricsDir = path.join(downloadRootDirectory, "lyrics");

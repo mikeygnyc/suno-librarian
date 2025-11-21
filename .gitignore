@@ -1,9 +1,5 @@
 
 node_modules/
-
-
-
-
 tmp/
 downloads/
 songs_metadata.json
@@ -13,3 +9,4 @@ nasloc
 scratch/
 config/config.json
 dist
+.DS_Store

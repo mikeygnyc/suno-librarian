@@ -7,11 +7,10 @@ export class PageMethods {
   constructor() {}
   async scrollSongIntoView(
     page: puppeteer.Page,
-    scrollContainer: puppeteer.ElementHandle<HTMLDivElement>,
     clipId: string
   ): Promise<puppeteer.ElementHandle | null> {
     const songSelector = `div[data-clip-id="${clipId}"]`;
-    let songRow = await scrollContainer.$(songSelector);
+    let songRow = await Importer.currentScrollContainer.$(songSelector);
 
     if (songRow) {
       await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
@@ -22,12 +21,12 @@ export class PageMethods {
     console.log(`  -> Song ${clipId} not visible. Scrolling to find...`);
     let stallCount = 0;
     while (stallCount < 2) {
-      await scrollContainer.evaluate((el) => {
+      await Importer.currentScrollContainer.evaluate((el) => {
         el.scrollTop += el.clientHeight * 0.8;
       });
       await delay(1500);
 
-      songRow = await scrollContainer.$(songSelector);
+      songRow = await Importer.currentScrollContainer.$(songSelector);
       if (songRow) {
         await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
         await delay(500);
@@ -35,13 +34,15 @@ export class PageMethods {
         return songRow;
       }
 
-      const isAtBottom = await scrollContainer.evaluate(
+      const isAtBottom = await Importer.currentScrollContainer.evaluate(
         (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
       );
 
       if (isAtBottom) {
         console.log("  -> Reached bottom. Resetting to top for another pass.");
-        await scrollContainer.evaluate((el) => el.scrollTo(0, 0));
+        await Importer.currentScrollContainer.evaluate((el) =>
+          el.scrollTo(0, 0)
+        );
         stallCount++;
         await delay(1500);
       }
@@ -113,30 +114,51 @@ export class PageMethods {
     }
     return false;
   }
-
+  async getElementByXpath(
+    page: puppeteer.Page,
+    xpath: string
+  ): Promise<puppeteer.ElementHandle<Element> | null> {
+    return await page.$(`::-p-xpath(${xpath})`);
+  }
+  async getValueFromElementByXpath(
+    page: puppeteer.Page,
+    xpath: string,
+    defaultValue: string,
+    valueKey?: string
+  ): Promise<string> {
+    let evalParm: any;
+    if (!valueKey) {
+      evalParm = (el: Element) => el.textContent;
+    } else {
+      evalParm = (el: Element) => el.getAttribute(valueKey);
+    }
+    const FullElement = await this.getElementByXpath(page, xpath);
+    const retValue = (await FullElement?.evaluate(evalParm)) || defaultValue;
+    return retValue;
+  }
   async getCurrentPageNumber(page: puppeteer.Page): Promise<number> {
     const pageNumXpath = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div[1]/div[2]/div/div[2]/div/div[2]/div/div/div[2]/div/div/span`;
     const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
-    
-      await page.waitForSelector(scrollContainerSelector, { timeout: 30000 });
-   
-    const pageNumberElement = await page.$(`::-p-xpath(${pageNumXpath})`);
-    if (pageNumberElement) {
-      const pageNumberText = await pageNumberElement.evaluate((el) => el.textContent  );
-      if (pageNumberText) {
-        const pageNumber = parseInt(pageNumberText.trim());
-        if (!isNaN(pageNumber)) {
-          return pageNumber;
-        }
+    await page.waitForSelector(scrollContainerSelector, { timeout: 30000 });
+
+    const pageNumberText = await this.getValueFromElementByXpath(
+      page,
+      pageNumXpath,
+      "1"
+    );
+    if (pageNumberText) {
+      const pageNumber = parseInt(pageNumberText.trim());
+      if (!isNaN(pageNumber)) {
+        return pageNumber;
       }
+      return pageNumber;
     }
-    return 1; // Default to page 1 if not found
+    return 1;
   }
   currentPage: number = 1;
   async paginationOps(
     page: puppeteer.Page,
     goToNext: boolean
-  
   ): Promise<boolean> {
     let success: boolean = false;
     if (goToNext) {
@@ -155,7 +177,7 @@ export class PageMethods {
       }
     }
     Importer.session.detach();
-    page.mainFrame()
+    page.mainFrame();
     Importer.session = await Importer.sessionStarter();
     await Importer.findScrollContainer();
     await delay(3000);
@@ -174,7 +196,10 @@ export class PageMethods {
           // Remove listener before resolving
           session.off("Browser.downloadProgress", handler);
 
-          const downloadPath = path.resolve(AppConfig.downloadRootDirectoryPath, "wav");
+          const downloadPath = path.resolve(
+            AppConfig.downloadRootDirectoryPath,
+            "wav"
+          );
           if (e.filePath) {
             const originalFileName = e.filePath;
             const newFileName = `${fileName}.wav`;

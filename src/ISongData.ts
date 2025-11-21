@@ -7,10 +7,10 @@ export interface ISongData {
   thumbnail?: string|null;
   model?: string|null;
   duration?: string|null;
-  mp3Status: TFileStatus;
-  flacStatus: TFileStatus;
-  alacStatus: TFileStatus;
-  wavStatus: TFileStatus;
+  mp3Status?: TFileStatus;
+  flacStatus?: TFileStatus;
+  alacStatus?: TFileStatus;
+  wavStatus?: TFileStatus;
   songUrl: string;
   liked: boolean;
   artistName?: string|null;
@@ -21,4 +21,5 @@ export interface ISongData {
   audioStrength:number;
   remixParent?:string|null;
   tags?: string[];
+  comment?:string;
 }

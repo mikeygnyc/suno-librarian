@@ -33,7 +33,6 @@ class ConfigHandler {
             (otherLocCfg: IDownloadHandlingConfig) => {
               let newCfg: IDownloadHandlingConfig = {
                 formats: otherLocCfg.formats,
-                retainOriginalFile: otherLocCfg.retainOriginalFile,
                 directoryPath: path.resolve(
                   otherLocCfg.directoryPath.replace("~", os.homedir)
                 ),

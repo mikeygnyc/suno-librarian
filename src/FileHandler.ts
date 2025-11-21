@@ -9,14 +9,21 @@ import path from "path";
 const asyncCopyFile = promisify(fs.copyFile);
 const asyncDeleteFile = promisify(fs.rm);
 const execFileAsync = promisify(execFile);
-
+export type TDirectoryType =
+  | "alac"
+  | "flac"
+  | "wav"
+  | "mp3"
+  | "metadata"
+  | "images"
+  | "lyrics";
 export class FileHandler {
   async convertWav(metadata: ISongData) {
     const wavFilePath = `${AppConfig.wavDirectoryPath}/${metadata.clipId}.wav`;
     if (!fs.existsSync(wavFilePath)) {
       throw new Error(`WAV file not found for clipId ${metadata.clipId}`);
     }
-    for(const format of AppConfig.audioFormats){
+    for (const format of AppConfig.audioFormats) {
       if (format === "wav") {
         console.log(
           `        ->  WAV format selected, no conversion needed for ${metadata.clipId}`
@@ -53,101 +60,139 @@ export class FileHandler {
         }
       }
     }
-    
+
     return;
   }
-  async saveImage(metadata: ISongData) {
-    let fullImagePath: string = "";
-    if (AppConfig.saveImages || AppConfig.embedImagesInConvertedFiles) {
-      const imageUrl: string = metadata.thumbnail ?? "";
-      const imgUrlArr: string[] = imageUrl.split("/");
-      if (imgUrlArr && imgUrlArr.length > 0) {
-        console.log(`      ->  Downloading image from ${imageUrl}`);
-        const imageResponse = await fetch(imageUrl);
-        if (!imageResponse.ok) {
-          console.log(
-            `      ->  Failed to fetch image: ${imageResponse.statusText} (${imageUrl})`
-          );
-        } else {
-          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-          //@ts-ignore
-          const imagePath = path.join(
-             //@ts-ignore
-            AppConfig.imageDirectoryPath,
-            imgUrlArr[imgUrlArr.length - 1]
-          );
-          if (imagePath) {
-            console.log(`      ->  Downloaded image to ${imagePath}`);
-            fs.writeFileSync(imagePath, imageBuffer);
-            fullImagePath = imagePath;
-          }
-        }
-      }
-    }
-  }
+  
   copyToOtherLocations(metadata: ISongData) {
     if (!AppConfig.copyDownloadsToOtherLocation) {
       return;
     }
+    const clipId = metadata.clipId;
+    const audioDirs: TDirectoryType[] = ["alac", "flac", "mp3", "wav"];
+    const metadataDirs: TDirectoryType[] = ["metadata", "images", "lyrics"];
+    let sourceMap: Map<TDirectoryType, string> = new Map<
+      TDirectoryType,
+      string
+    >(); //maps a single source to each dirtype
+    let targetMap: Map<TDirectoryType, string[]> = new Map<
+      TDirectoryType,
+      string[]
+    >(); //maps all dests to each dirtype
+
+    audioDirs.concat(metadataDirs).forEach((metaDir: TDirectoryType) => {
+      const source = this.makeOtherSourcePath(
+        metaDir,
+        clipId,
+        this.extensionLookupByDirType(metaDir)
+      );
+      sourceMap.set(metaDir, source);
+    });
     AppConfig.otherLocationConfig.forEach(
       async (copyConfig: IDownloadHandlingConfig) => {
-        copyConfig.formats.forEach((format: TAudioFormats) => {
-          let extension: string = "";
-          switch (format) {
-            case "alac":
-              extension = ".m4a";
-              break;
-            case "flac":
-              extension = ".flac";
-              break;
-            case "mp3":
-              extension = ".mp3";
-              break;
-            case "wav":
-              extension = ".wav";
-              break;
-          }
-
-          const sourcePath = path.join(
-            (AppConfig as any)[`${format}DirectoryPath`],
-            `${metadata.clipId}${extension}`
-          );
-          const destPath = path.join(
-            copyConfig.directoryPath,
-            format,
-            `${metadata.clipId}${extension}`
-          );
-          //fs.copyFileSync(sourcePath, destPath);
+        metadataDirs
+          .concat(copyConfig.formats)
+          .forEach((metaDir: TDirectoryType) => {
+            const dest = this.makeOtherDestPath(
+              metaDir,
+              copyConfig.directoryPath,
+              clipId,
+              this.extensionLookupByDirType(metaDir)
+            );
+            let targets = targetMap.get(metaDir) || [];
+            targets.push(dest);
+            targetMap.set(metaDir, targets);
+          });
+      }
+    );
+    sourceMap.forEach((sourcePath: string, dirType: TDirectoryType) => {
+      let targets = targetMap.get(dirType);
+      if (targets) {
+        targets.forEach((destPath: string) => {
           asyncCopyFile(sourcePath, destPath)
             .catch((reason: any) => {
               console.log(
-                `          --> Error copying ${format} ${sourcePath} to ${destPath}! error: ${JSON.stringify(
+                `          --> Error copying ${dirType} ${sourcePath} to ${destPath}! error: ${JSON.stringify(
                   reason
                 )}`
               );
             })
             .then(() => {
               console.log(
-                `          --> Copied ${format} ${sourcePath} to ${destPath}, removing original`
+                `          --> Copied ${dirType} ${sourcePath} to ${destPath}`
               );
-              if (!copyConfig.retainOriginalFile) {
+              if (!AppConfig.retainOriginalsAfterCopying) {
+                console.log(
+                      `          --> Removing original ${dirType} ${sourcePath}`
+                    );
                 asyncDeleteFile(sourcePath)
                   .catch((reason: any) => {
                     console.log(
-                      `          --> Error deleting ${format} ${sourcePath} after copy! error: ${JSON.stringify(
+                      `          --> Error deleting ${dirType} ${sourcePath} after copy! error: ${JSON.stringify(
                         reason
                       )}`
                     );
                   })
                   .then(() => {
                     console.log(
-                      `          --> Removed ${format} ${sourcePath}`
+                      `          --> Removed ${dirType} ${sourcePath}`
                     );
                   });
               }
             });
         });
       }
+    });
+    if (!AppConfig.audioFormats.includes("wav")){
+      let wavPath= sourceMap.get("wav")||"";
+      asyncDeleteFile(wavPath);
+    }
+  }
+  private extensionLookupByDirType(dirType: TDirectoryType): string {
+    let extension: string = ".txt";
+    switch (dirType) {
+      case "metadata":
+        extension = "json";
+        break;
+      case "images":
+        extension = "jpeg";
+        break;
+      case "lyrics":
+        extension = "txt";
+        break;
+      case "alac":
+        extension = "m4a";
+        break;
+      case "flac":
+        extension = "flac";
+        break;
+      case "mp3":
+        extension = "mp3";
+        break;
+      case "wav":
+        extension = "wav";
+        break;
+    }
+    return extension;
+  }
+
+  private makeOtherDestPath(
+    directoryType: TDirectoryType,
+    destPathRoot: string,
+    clipId: string,
+    extension: string
+  ) {
+    return path.join(destPathRoot, directoryType, `${clipId}.${extension}`);
+  }
+
+  private makeOtherSourcePath(
+    directoryType: TDirectoryType,
+    clipId: string,
+    extension: string
+  ) {
+    return path.join(
+      (AppConfig as any)[`${directoryType}DirectoryPath`],
+      `${clipId}.${extension}`
     );
   }
 
@@ -187,4 +232,4 @@ export class FileHandler {
   }
 }
 
-export const Converter:FileHandler = new FileHandler();
+export const Converter: FileHandler = new FileHandler();

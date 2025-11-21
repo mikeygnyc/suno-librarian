@@ -66,246 +66,7 @@ export class Scraper {
         await this.page.goto("https://suno.com/me");
         console.log(`Successfully connected to page: ${this.page.url()}`);
       }
-      this.getDataFromPage(this.session);
-      // --- LOAD AND PREPARE DATA ---
-      console.log("Starting data loading...");
-      const allSongs = new Map<string, ISongData>();
-      const metadataPath = path.join(
-        AppConfig.downloadRootDirectoryPath,
-        "metadata",
-        "songs_metadata.json"
-      );
-
-      if (fs.existsSync(metadataPath)) {
-        console.log("Found existing metadata file. Loading...");
-        try {
-          const existingSongs: ISongData[] = JSON.parse(
-            fs.readFileSync(metadataPath, "utf-8")
-          );
-          existingSongs.forEach((song) => allSongs.set(song.clipId, song));
-        } catch (error) {}
-        console.log(`Loaded ${allSongs.size} songs from file.`);
-      }
-
-      let scrollContainer = await this.findScrollContainer();
-
-      // Scrape page for all songs to discover new ones
-      await this.discoverSongs(allSongs, this.session);
-
-      // Create a queue of previously processed songs that need loading/downloading
-      const songsToProcess = Array.from(allSongs.values()).filter(
-        (song) =>
-          (AppConfig.useSunoMp3FileIfAvailable &&
-            AppConfig.audioFormats.includes("mp3") &&
-            song.mp3Status !== "DOWNLOADED" &&
-            song.mp3Status !== "CREATED") ||
-          song.wavStatus !== "DOWNLOADED"
-      );
-
-      if (songsToProcess.length === 0) {
-        if (this.exhaustedSearch) {
-          console.log(
-            "All discovered songs have already been downloaded. Exiting."
-          );
-          return;
-        } else {
-          this.exhaustedSearch = true;
-        }
-
-        if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
-          console.log("--- All songs discoverd. No more pages found. ---");
-          return;
-        } else {
-          console.log("Moving to next page");
-          await delay(5000);
-          this.session.detach();
-          await this.scrapeAndDownload();
-        }
-      }
-
-      console.log(
-        `Total songs: ${allSongs.size}. Songs to process: ${songsToProcess.length}.`
-      );
-      ProcessMetadata.saveSongsMetadata(allSongs); // Save the merged list right away
-
-      // --- START PROCESSING ---
-
-      for (const [index, song] of songsToProcess.entries()) {
-        console.log(
-          `\n--- [${index + 1}/${songsToProcess.length}] Processing: ${
-            song.title
-          } (${song.clipId}) ---`
-        );
-        const songObject = allSongs.get(song.clipId)!;
-
-        const songRow = await GlobalPageMethods.scrollSongIntoView(
-          this.page,
-          scrollContainer as puppeteer.ElementHandle<HTMLDivElement>,
-          song.clipId
-        );
-        if (!songRow) {
-          console.error(
-            `Skipping "${song.title}" as it could not be scrolled into view.`
-          );
-          songObject.mp3Status = "SKIPPED";
-          songObject.wavStatus = "SKIPPED";
-          ProcessMetadata.saveSongsMetadata(allSongs);
-          continue;
-        }
-
-        // --- MP3 Download ---
-        if (songObject.mp3Status !== "DOWNLOADED") {
-          songObject.mp3Status = "DOWNLOADED"; //wav only
-          // try {
-          //     console.log('  -> Downloading MP3...');
-          //     await this.page.keyboard.press('Escape');
-          //     await delay(200);
-          //     if (!(await clickVisibleMoreButton(page, song.clipId)))
-          //         throw new Error('More button not clickable for MP3');
-
-          //     const downloadMenuItem = await this.page.waitForSelector(
-          //         "xpath///button[.//span[text()='Download']]",
-          //         { visible: true, timeout: 5000 }
-          //     );
-          //     await downloadMenuItem.hover();
-          //     const mp3Button = await this.page.waitForSelector(
-          //         'button[aria-label="MP3 Audio"]',
-          //         { visible: true, timeout: 5000 }
-          //     );
-          //     await mp3Button.click();
-          //     await this.page.waitForSelector(
-          //         'button[aria-label="MP3 Audio"]',
-          //         { hidden: true, timeout: 10000 }
-          //     );
-
-          //     songObject.mp3Status = 'DOWNLOADED';
-          //     console.log('  -> MP3 download successful.');
-          // } catch (e: any) {
-          //     console.error(`  -> MP3 download FAILED: ${e.message}`);
-          //     songObject.mp3Status = 'FAILED';
-          //     await this.page.keyboard.press('Escape'); // Reset state
-          // }
-          ProcessMetadata.saveSongsMetadata(allSongs); // Save status immediately
-          await delay(1000);
-        }
-
-        // --- WAV Download ---
-        if (songObject.wavStatus !== "DOWNLOADED") {
-          try {
-            console.log("  -> Downloading WAV...");
-            const checkForExistDialog =
-              "xpath///span[contains(text(), 'Download WAV Audio')]";
-            let existDialog = await this.page.$(checkForExistDialog);
-            if (existDialog) {
-              const findModalCloseSearch =
-                'button[aria-label="Close"]:not(.chakra-popover__close-btn)';
-              let modalClose = await this.page.$(findModalCloseSearch);
-              if (modalClose) {
-                modalClose.click();
-                console.log(`Closing stuck modal`);
-              }
-            }
-
-            await GlobalPageMethods.scrollSongIntoView(
-              this.page,
-              scrollContainer as puppeteer.ElementHandle<HTMLDivElement>,
-              song.clipId
-            ); // Re-center element
-            await this.page.keyboard.press("Escape");
-            await delay(200);
-
-            if (
-              !(await GlobalPageMethods.clickVisibleMoreButton(
-                this.page,
-                song.clipId
-              ))
-            )
-              throw new Error("More button not clickable for WAV");
-
-            const downloadMenuItemWav = await this.page.waitForSelector(
-              "xpath///button[.//span[text()='Download']]",
-              { visible: true, timeout: 10000 }
-            );
-            if (downloadMenuItemWav) {
-              await downloadMenuItemWav.hover();
-            } else {
-              throw `Could not find download download menu item - wav for ${song.clipId}`;
-            }
-
-            const wavButton = await this.page.waitForSelector(
-              'button[aria-label="WAV Audio"]',
-              { visible: true, timeout: 10000 }
-            );
-            if (wavButton) {
-              await wavButton.click();
-            } else {
-              throw `Could not find download wav button for ${song.clipId}`;
-            }
-
-            const modalTitleXPath =
-              "xpath///span[contains(text(), 'Download WAV Audio')]";
-            await this.page.waitForSelector(modalTitleXPath, {
-              visible: true,
-              timeout: 15000,
-            });
-            console.log(
-              "  -> Waiting for file generation (up to 45 seconds)..."
-            );
-
-            const downloadButtonXPath =
-              "//button[.//span[contains(text(), 'Download File')]]";
-            const readyDownloadButtonSelector = `xpath/${downloadButtonXPath}[not(@disabled)]`;
-            const downloadButtonElement = await this.page.waitForSelector(
-              readyDownloadButtonSelector,
-              { timeout: 60000 }
-            );
-            if (downloadButtonElement) {
-              await downloadButtonElement.click();
-            } else {
-              throw `Could not find download button element for ${song.clipId}`;
-            }
-
-            await GlobalPageMethods.waitUntilDownload(
-              this.session,
-              songObject.clipId
-            );
-            await this.page.waitForFunction(
-              (xpath) =>
-                !document.evaluate(
-                  xpath,
-                  document,
-                  null,
-                  XPathResult.FIRST_ORDERED_NODE_TYPE,
-                  null
-                ).singleNodeValue,
-              {},
-              modalTitleXPath.replace("xpath/", "")
-            );
-
-            songObject.wavStatus = "DOWNLOADED";
-            console.log("  -> WAV download successful.");
-            Converter.convertWav(songObject).then(() => {
-              Converter.copyToOtherLocations(songObject);
-            });
-          } catch (e: any) {
-            console.error(`  -> WAV download FAILED: ${e.message}`);
-            songObject.wavStatus = "FAILED";
-            await this.page.keyboard.press("Escape"); // Reset state
-          }
-          ProcessMetadata.saveSongsMetadata(allSongs); // Save status immediately
-        }
-
-        console.log(`--- Finished processing "${song.title}". Pausing... ---`);
-      }
-      await delay(3000);
-      console.log("--- All songs have been processed on this this.page. ---");
-      if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
-        console.log("--- No more pages found. ---");
-      } else {
-        await delay(5000);
-        this.session.detach();
-        await this.scrapeAndDownload();
-      }
+      await this.getDataFromPage(this.session);
     } catch (error) {
       console.error("A critical error occurred:", error);
     } finally {
@@ -315,6 +76,7 @@ export class Scraper {
       }
     }
   }
+  currentScrollContainer!: puppeteer.ElementHandle<Element>;
   async findScrollContainer() {
     const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
     await this.page.waitForSelector(scrollContainerSelector, {
@@ -328,7 +90,8 @@ export class Scraper {
     if (!scrollContainer)
       throw new Error("Could not find the song list's scrollable container.");
     console.log("Successfully identified the nested scroll container.");
-    return scrollContainer;
+    this.currentScrollContainer = scrollContainer;
+    return;
   }
 
   async sessionStarter() {
@@ -356,96 +119,474 @@ export class Scraper {
     });
     return this.session;
   }
-
-  async getDataFromPage(session: puppeteer.CDPSession) {}
-
-  private async discoverSongs(
-    allSongs: Map<string, ISongData>,
-    session: puppeteer.CDPSession,
-    previousDiscoverCtr: number = 0
-  ) {
-    const rows = await this.page.$$('div[data-testid="song-row"]');
-    const discoveredSongs: ISongData[] = await this.page.$$eval(
-      'div[data-testid="song-row"]',
-      (rows) =>
-        rows
-          .map((row) => {
-            const clipId = row.getAttribute("data-clip-id") || "";
-            const titleEl = row.querySelector("span[title] a span");
-            const title = titleEl ? titleEl.textContent : "Untitled";
-            const styleEl = row.querySelector("div.flex.flex-row > div[title]");
-            const style = styleEl?.getAttribute("title") || null;
-            const imgEl = row.querySelector('img[alt="Song Image"]');
-            const thumbnail =
-              imgEl?.getAttribute("data-src") ||
-              imgEl?.getAttribute("src") ||
-              null;
-            const durationEl = row.querySelector(
-              'div[aria-label="Play Song"] span.absolute'
-            );
-            const duration = durationEl?.textContent?.trim() || null;
-            const modelEl = Array.from(row.querySelectorAll("span")).find(
-              (el) => el.textContent?.trim().startsWith("v")
-            );
-            const model = modelEl?.textContent?.trim() || null;
-            const songUrl = `https://suno.com/song/${clipId}`;
-            const likedEl = row.querySelector(
-              'button[aria-label="Playbar: Like"]'
-            );
-            const liked =
-              likedEl?.classList.contains("text-foreground-primary") || false;
-            return {
-              title,
-              clipId,
-              songUrl,
-              style,
-              thumbnail,
-              model,
-              duration,
-              mp3Status: "PENDING" as TFileStatus,
-              wavStatus: "PENDING" as TFileStatus,
-              alacStatus: "PENDING" as TFileStatus,
-              flacStatus: "PENDING" as TFileStatus,
-              liked: liked,
-              artist: null,
-              lyrics: null,
-              creationDate: null,
-              weirdness: 50,
-              styleStrength: 50,
-              audioStrength: 25,
-              remixParent: null,
-              tags: [],
-            };
-          })
-          .filter((song) => song.clipId)
+  allSongs = new Map<string, ISongData>();
+  async getDataFromPage(session: puppeteer.CDPSession) {
+    // --- LOAD AND PREPARE DATA ---
+    console.log("Starting data loading...");
+    const metadataPath = path.join(
+      AppConfig.downloadRootDirectoryPath,
+      "metadata",
+      "songs_metadata.json"
     );
-    // Merge discovered songs with existing data
-    let foundThisPass:number = 0;
-    discoveredSongs.forEach((song) => {
-      if (!allSongs.has(song.clipId)) {
-        allSongs.set(song.clipId, song);
-        foundThisPass++;
+
+    if (fs.existsSync(metadataPath)) {
+      console.log("Found existing metadata file. Loading...");
+      try {
+        const existingSongs: ISongData[] = JSON.parse(
+          fs.readFileSync(metadataPath, "utf-8")
+        );
+        existingSongs.forEach((song) => this.allSongs.set(song.clipId, song));
+      } catch (error) {}
+      console.log(`Loaded ${this.allSongs.size} songs from file.`);
+    }
+
+    // Scrape page for all songs to discover new ones
+    await this.discoverSongs();
+    while (this.morePagesAvailable) {
+      const songsToProcess = await this.buildProcessingQueue();
+      if (songsToProcess.length === 0) {
+        console.log(
+          "All discovered songs have already been downloaded. Exiting."
+        );
+        return;
+        // if (this.exhaustedSearch) {
+        //   console.log(
+        //     "All discovered songs have already been downloaded. Exiting."
+        //   );
+        //   return;
+        // } else {
+        //   this.exhaustedSearch = true;
+        // }
+
+        // if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
+        //   console.log("--- All songs discovered. No more pages found. ---");
+        //   return;
+        // } else {
+        //   console.log("Moving to next page");
+        //   await delay(5000);
+        //   this.session.detach();
+        //   await this.scrapeAndDownload();
+        // }
       }
-    });
-    let totalDiscovered = foundThisPass + previousDiscoverCtr;
+      // --- START PROCESSING ---
+
+      await this.processSongs(songsToProcess);
+      await delay(3000);
+      console.log("--- All songs have been processed on this this.page. ---");
+    }
+
+    // if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
+    //   console.log("--- No more pages found. ---");
+    // } else {
+    //   await delay(5000);
+    //   this.session.detach();
+    //   await this.scrapeAndDownload();
+    // }
+    return;
+  }
+  private async buildProcessingQueue(): Promise<ISongData[]> {
+    // Create a queue of previously processed songs that need loading/downloading
+    const songsToProcess = Array.from(this.allSongs.values()).filter(
+      (song) =>
+        (AppConfig.useSunoMp3FileIfAvailable &&
+          AppConfig.audioFormats.includes("mp3") &&
+          song.mp3Status !== "DOWNLOADED" &&
+          song.mp3Status !== "CREATED") ||
+        song.wavStatus !== "DOWNLOADED"
+    );
+
     console.log(
-      `Discovered ${foundThisPass} songs on page ${GlobalPageMethods.currentPage}, ${totalDiscovered} total so far.`
+      `Total songs: ${this.allSongs.size}. Songs to process: ${songsToProcess.length}.`
     );
-    ProcessMetadata.saveSongsMetadata(allSongs);
-    const nextPageFound = await GlobalPageMethods.paginationOps(
-      this.page,
-      true
-    );
-    if (nextPageFound) {
-      console.log(`Moving to next page to discover more songs..`);
-      await delay(5000);
-      await this.discoverSongs(allSongs, session, totalDiscovered);
-    } else {
+    ProcessMetadata.saveMainMetadataFile(); // Save the merged list right away
+    return songsToProcess;
+  }
+  private async processSongs(songsToProcess: ISongData[]) {
+    for (const [index, song] of songsToProcess.entries()) {
       console.log(
-        `Discovery complete. Total songs discovered: ${allSongs.size}.`
+        `\n--- [${index + 1}/${songsToProcess.length}] Processing: ${
+          song.title
+        } (${song.clipId}) ---`
       );
+      const songObject = this.allSongs.get(song.clipId)!;
+
+      const songRow = await GlobalPageMethods.scrollSongIntoView(
+        this.page,
+        song.clipId
+      );
+      if (!songRow) {
+        console.error(
+          `Skipping "${song.title}" as it could not be scrolled into view.`
+        );
+        songObject.mp3Status = "SKIPPED";
+        songObject.wavStatus = "SKIPPED";
+        songObject.flacStatus = "SKIPPED";
+        songObject.alacStatus = "SKIPPED";
+        ProcessMetadata.saveMainMetadataFile();
+        continue;
+      }
+
+      // --- MP3 Download ---
+      await this.downloadMp3(songObject);
+      // --- WAV Download ---
+      await this.downloadWav(songObject, song);
+      ProcessMetadata.saveMainMetadataFile();
+      console.log(`--- Finished processing "${song.title}". Pausing... ---`);
+    }
+    return;
+  }
+
+  private async downloadWav(songObject: ISongData, song: ISongData) {
+    //don't do it if only mp3 is selected and use suno if available is selected
+    let proceed: boolean = false;
+    if (AppConfig.audioFormats.length > 1) {
+      proceed = true;
+    } else {
+      if (AppConfig.audioFormats.includes("mp3")) {
+        if (!AppConfig.useSunoMp3FileIfAvailable) {
+          proceed = true;
+        }
+      } else {
+        proceed = true;
+      }
+    }
+    if (!proceed) {
+      return;
+    }
+    if (songObject.wavStatus !== "DOWNLOADED") {
+      try {
+        console.log("  -> Downloading WAV...");
+        const checkForExistDialog =
+          "xpath///span[contains(text(), 'Download WAV Audio')]";
+        let existDialog = await this.page.$(checkForExistDialog);
+        if (existDialog) {
+          const findModalCloseSearch =
+            'button[aria-label="Close"]:not(.chakra-popover__close-btn)';
+          let modalClose = await this.page.$(findModalCloseSearch);
+          if (modalClose) {
+            modalClose.click();
+            console.log(`Closing stuck modal`);
+          }
+        }
+
+        await GlobalPageMethods.scrollSongIntoView(this.page, song.clipId); // Re-center element
+        await this.page.keyboard.press("Escape");
+        await delay(200);
+
+        if (
+          !(await GlobalPageMethods.clickVisibleMoreButton(
+            this.page,
+            song.clipId
+          ))
+        )
+          throw new Error("More button not clickable for WAV");
+
+        const downloadMenuItemWav = await this.page.waitForSelector(
+          "xpath///button[.//span[text()='Download']]",
+          { visible: true, timeout: 10000 }
+        );
+        if (downloadMenuItemWav) {
+          await downloadMenuItemWav.hover();
+        } else {
+          throw `Could not find download download menu item - wav for ${song.clipId}`;
+        }
+
+        const wavButton = await this.page.waitForSelector(
+          'button[aria-label="WAV Audio"]',
+          { visible: true, timeout: 10000 }
+        );
+        if (wavButton) {
+          await wavButton.click();
+        } else {
+          throw `Could not find download wav button for ${song.clipId}`;
+        }
+
+        const modalTitleXPath =
+          "xpath///span[contains(text(), 'Download WAV Audio')]";
+        await this.page.waitForSelector(modalTitleXPath, {
+          visible: true,
+          timeout: 15000,
+        });
+        console.log("  -> Waiting for file generation (up to 45 seconds)...");
+
+        const downloadButtonXPath =
+          "//button[.//span[contains(text(), 'Download File')]]";
+        const readyDownloadButtonSelector = `xpath/${downloadButtonXPath}[not(@disabled)]`;
+        const downloadButtonElement = await this.page.waitForSelector(
+          readyDownloadButtonSelector,
+          { timeout: 60000 }
+        );
+        if (downloadButtonElement) {
+          await downloadButtonElement.click();
+        } else {
+          throw `Could not find download button element for ${song.clipId}`;
+        }
+
+        await GlobalPageMethods.waitUntilDownload(
+          this.session,
+          songObject.clipId
+        );
+        await this.page.waitForFunction(
+          (xpath) =>
+            !document.evaluate(
+              xpath,
+              document,
+              null,
+              XPathResult.FIRST_ORDERED_NODE_TYPE,
+              null
+            ).singleNodeValue,
+          {},
+          modalTitleXPath.replace("xpath/", "")
+        );
+
+        songObject.wavStatus = "DOWNLOADED";
+        console.log("  -> WAV download successful.");
+        Converter.convertWav(songObject).then(() => {
+          Converter.copyToOtherLocations(songObject);
+        });
+      } catch (e: any) {
+        console.error(`  -> WAV download FAILED: ${e.message}`);
+        songObject.wavStatus = "FAILED";
+        await this.page.keyboard.press("Escape"); // Reset state
+      }
     }
   }
+
+  private async downloadMp3(songObject: ISongData) {
+    if (
+      !AppConfig.audioFormats.includes("mp3") ||
+      !AppConfig.useSunoMp3FileIfAvailable
+    ) {
+      return;
+    }
+    if (songObject.mp3Status !== "DOWNLOADED") {
+      try {
+        console.log("  -> Downloading MP3...");
+        await this.page.keyboard.press("Escape");
+        await delay(200);
+        if (
+          !(await GlobalPageMethods.clickVisibleMoreButton(
+            this.page,
+            songObject.clipId
+          ))
+        )
+          throw new Error("More button not clickable for MP3");
+        const downloadMenuItem = await this.page.waitForSelector(
+          "xpath///button[.//span[text()='Download']]",
+          { visible: true, timeout: 5000 }
+        );
+        if (downloadMenuItem) {
+          await downloadMenuItem.hover();
+          const mp3Button = await this.page.waitForSelector(
+            'button[aria-label="MP3 Audio"]',
+            { visible: true, timeout: 5000 }
+          );
+          if (mp3Button) {
+            await mp3Button.click();
+            await this.page.waitForSelector('button[aria-label="MP3 Audio"]', {
+              hidden: true,
+              timeout: 10000,
+            });
+            songObject.mp3Status = "DOWNLOADED";
+            console.log("  -> MP3 download successful.");
+          } else {
+            throw new Error("Could not find the mp3 button");
+          }
+        } else {
+          throw new Error("Could not find the download menu item");
+        }
+      } catch (e: any) {
+        console.error(`  -> MP3 download FAILED: ${e.message}`);
+        songObject.mp3Status = "FAILED";
+        await this.page.keyboard.press("Escape"); // Reset state
+      }
+      ProcessMetadata.saveMainMetadataFile(); // Save status immediately
+      await delay(1000);
+    }
+    return;
+  }
+
+  private async discoverSongs() {
+    if (this.pagesSearched > 0) {
+      this.morePagesAvailable = await GlobalPageMethods.paginationOps(
+        this.page,
+        true
+      );
+    } else {
+      await this.findScrollContainer();
+    }
+    if (this.morePagesAvailable) {
+      console.log(`Moving to next page to discover more songs..`);
+      await delay(5000);
+    } else {
+      if (this.pagesSearched > 0) {
+        console.log(
+          `Discovery complete. Total songs discovered: ${this.allSongs.size}.`
+        );
+      }
+    }
+
+    // 1. Extract ONLY simple DOM data inside $$eval
+    const discoveredSongsBasic = await this.page.$$eval(
+      'div[data-testid="song-row"]',
+      (rows) =>
+        rows.map((row) => {
+          const clipId = row.getAttribute("data-clip-id") || "";
+          const titleEl = row.querySelector("span[title] a span");
+          const title = titleEl ? titleEl.textContent : "Untitled";
+          const styleEl = row.querySelector("div.flex.flex-row > div[title]");
+          const style = styleEl?.getAttribute("title") || null;
+          const imgEl = row.querySelector('img[alt="Song Image"]');
+          const thumbnail =
+            imgEl?.getAttribute("data-src") ||
+            imgEl?.getAttribute("src") ||
+            null;
+          const durationEl = row.querySelector(
+            'div[aria-label="Play Song"] span.absolute'
+          );
+          const duration = durationEl?.textContent?.trim() || null;
+          const modelEl = Array.from(row.querySelectorAll("span")).find((el) =>
+            el.textContent?.trim().startsWith("v")
+          );
+          const model = modelEl?.textContent?.trim() || null;
+          const likedEl = row.querySelector(
+            'button[aria-label="Playbar: Like"]'
+          );
+          const liked =
+            likedEl?.classList.contains("text-foreground-primary") ?? false;
+
+          return {
+            clipId,
+            title,
+            style,
+            thumbnail,
+            duration,
+            model,
+            liked,
+          };
+        })
+    );
+
+    // 2. Now process each row with async Node-side logic
+    const discoveredSongs: ISongData[] = [];
+
+    for (const item of discoveredSongsBasic) {
+      if (!item.clipId) continue;
+
+      const clipId = item.clipId;
+
+      const songUrl = `https://suno.com/song/${clipId}`;
+
+      const artistXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[1]/div/a`;
+
+      const artistName = await GlobalPageMethods.getValueFromElementByXpath(
+        this.page,
+        artistXpath,
+        "Unknown Artist",
+        "title"
+      );
+
+      const lyricsXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[1]`;
+      const lyrics = await GlobalPageMethods.getValueFromElementByXpath(
+        this.page,
+        lyricsXpath,
+        "[Instrumental]"
+      );
+
+      const creationDateXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[2]`;
+      const creationDateStr =
+        await GlobalPageMethods.getValueFromElementByXpath(
+          this.page,
+          creationDateXpath,
+          "1970-01-01T00:00:00Z"
+        );
+      const creationDate = new Date(creationDateStr);
+
+      const remixParentXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[4]/div/div/div/div[2]/div/div[2]/a`;
+      const remixParentHref =
+        await GlobalPageMethods.getValueFromElementByXpath(
+          this.page,
+          remixParentXpath,
+          "",
+          "href"
+        );
+      const remixParent = remixParentHref?.split("/")[2] || null;
+
+      // Controls
+      const controlValsMap = new Map<string, string>();
+      for (let i = 1; i <= 3; i++) {
+        const nameXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li[${i}]/span[1]/text()[1]`;
+        const valXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li[${i}]/span[2]`;
+
+        const key = await GlobalPageMethods.getValueFromElementByXpath(
+          this.page,
+          nameXpath,
+          ""
+        );
+        const val = await GlobalPageMethods.getValueFromElementByXpath(
+          this.page,
+          valXpath,
+          ""
+        );
+
+        if (key && val) controlValsMap.set(key, val);
+      }
+
+      const weirdness = parseInt(controlValsMap.get("Weirdness") ?? "50%");
+      const styleStrength = parseInt(
+        controlValsMap.get("Style Strength") ?? "50%"
+      );
+      const audioStrength = parseInt(
+        controlValsMap.get("Audio Strength") ?? "25%"
+      );
+
+      discoveredSongs.push({
+        title: item.title,
+        clipId,
+        songUrl,
+        style: item.style,
+        thumbnail: item.thumbnail,
+        model: item.model,
+        duration: item.duration,
+        liked: item.liked,
+        mp3Status: "PENDING",
+        wavStatus: "PENDING",
+        alacStatus: "PENDING",
+        flacStatus: "PENDING",
+        artistName,
+        lyrics,
+        creationDate,
+        weirdness,
+        styleStrength,
+        audioStrength,
+        remixParent,
+        tags: [],
+      });
+    }
+
+   
+
+    // Merge discovered songs with existing data
+    let foundThisPass: number = 0;
+    for (const song of discoveredSongs) {
+      if (!this.allSongs.has(song.clipId)) {
+        this.allSongs.set(song.clipId, song);
+        foundThisPass++;
+        await ProcessMetadata.saveSongMetadata(song);
+      }
+    }
+    this.pagesSearched++;
+    this.totalDiscoveredSongs = foundThisPass + this.totalDiscoveredSongs;
+    console.log(
+      `Discovered ${foundThisPass} songs on page ${GlobalPageMethods.currentPage}, ${this.totalDiscoveredSongs} total so far.`
+    );
+    ProcessMetadata.saveMainMetadataFile();
+  }
+  totalDiscoveredSongs: number = 0;
+  morePagesAvailable: boolean = true;
+  pagesSearched: number = 0;
+
+  private async extractMetadata(row: puppeteerElementHandle<HTMLDivElement>) {}
 }
 
 export let Importer = new Scraper();
