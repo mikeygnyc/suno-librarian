@@ -18,7 +18,7 @@
       // VS Code can map TS breakpoints → JS
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
-      "runtimeVersion": "24.11.1",
+      //"runtimeVersion": "24.11.1",
       // Build first
       "preLaunchTask": "tsc: build - tsconfig.json",
 

@@ -1,4 +1,4 @@
-import { TFileStatus } from "./TDownloadStatus";
+import { TFileStatus } from "./TFileStatus";
 
 export interface ISongData {
   title?: string|null;
@@ -14,12 +14,12 @@ export interface ISongData {
   songUrl: string;
   liked: boolean;
   artistName?: string|null;
-  lyrics?: string|null;
+  lyrics?: string|undefined;
   creationDate?: Date|null;
   weirdness: number;
   styleStrength:number;
   audioStrength:number;
-  remixParent?:string|null;
+  remixParent?:string|undefined;
   tags?: string[];
   comment?:string;
 }

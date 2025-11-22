@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { execFile } from "child_process";
 import { IDownloadHandlingConfig } from "./IDownloadHandlingConfig";
 import path from "path";
+import { MetadataProcessor } from "./MetadataHandler";
 const asyncCopyFile = promisify(fs.copyFile);
 const asyncDeleteFile = promisify(fs.rm);
 const execFileAsync = promisify(execFile);
@@ -32,18 +33,38 @@ export class FileHandler {
       if (format === "flac") {
         const flacPath = `${AppConfig.flacDirectoryPath}/${metadata.clipId}.flac`;
         console.log(`        ->  Converting ${metadata.clipId} to flac`);
-        await execFileAsync(
-          "ffmpeg",
-          this.createFfmpegExecArgs(flacPath, wavFilePath, "flac")
-        );
+        try {
+          await execFileAsync(
+            "ffmpeg",
+            this.createFfmpegExecArgs(flacPath, wavFilePath, "flac")
+          );
+          metadata.flacStatus = "CREATED";
+        } catch (error) {
+          console.log(
+            `        ->  Error converting ${
+              metadata.clipId
+            } to flac: ${JSON.stringify(error)}`
+          );
+          metadata.flacStatus = "FAILED";
+        }
       }
       if (format === "alac") {
-        const alacPath = `${AppConfig.alacDirectoryPath}/${metadata.clipId}.m4a`;
-        console.log(`        ->  Converting ${metadata.clipId} to alac`);
-        await execFileAsync(
-          "ffmpeg",
-          this.createFfmpegExecArgs(alacPath, wavFilePath, "alac")
-        );
+        try {
+          const alacPath = `${AppConfig.alacDirectoryPath}/${metadata.clipId}.m4a`;
+          console.log(`        ->  Converting ${metadata.clipId} to alac`);
+          await execFileAsync(
+            "ffmpeg",
+            this.createFfmpegExecArgs(alacPath, wavFilePath, "alac")
+          );
+          metadata.alacStatus = "CREATED";
+        } catch (error) {
+          console.log(
+            `        ->  Error converting ${
+              metadata.clipId
+            } to alac: ${JSON.stringify(error)}`
+          );
+          metadata.alacStatus = "FAILED";
+        }
       }
       if (format === "mp3") {
         if (AppConfig.useSunoMp3FileIfAvailable) {
@@ -51,19 +72,29 @@ export class FileHandler {
             `        ->  MP3 format selected, no conversion needed for ${metadata.clipId}`
           );
         } else {
-          const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
-          console.log(`        ->  Converting ${metadata.clipId} to mp3`);
-          await execFileAsync(
-            "ffmpeg",
-            this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3")
-          );
+          try {
+            const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
+            console.log(`        ->  Converting ${metadata.clipId} to mp3`);
+            await execFileAsync(
+              "ffmpeg",
+              this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3")
+            );
+            metadata.mp3Status = "CREATED";
+          } catch (error) {
+            console.log(
+              `        ->  Error converting ${
+                metadata.clipId
+              } to mp3: ${JSON.stringify(error)}`
+            );
+            metadata.mp3Status = "FAILED";
+          }
         }
       }
     }
-
+    MetadataProcessor.embedMetadataInFile(metadata);
     return;
   }
-  
+
   copyToOtherLocations(metadata: ISongData) {
     if (!AppConfig.copyDownloadsToOtherLocation) {
       return;
@@ -123,8 +154,8 @@ export class FileHandler {
               );
               if (!AppConfig.retainOriginalsAfterCopying) {
                 console.log(
-                      `          --> Removing original ${dirType} ${sourcePath}`
-                    );
+                  `          --> Removing original ${dirType} ${sourcePath}`
+                );
                 asyncDeleteFile(sourcePath)
                   .catch((reason: any) => {
                     console.log(
@@ -143,8 +174,8 @@ export class FileHandler {
         });
       }
     });
-    if (!AppConfig.audioFormats.includes("wav")){
-      let wavPath= sourceMap.get("wav")||"";
+    if (!AppConfig.audioFormats.includes("wav")) {
+      let wavPath = sourceMap.get("wav") || "";
       asyncDeleteFile(wavPath);
     }
   }

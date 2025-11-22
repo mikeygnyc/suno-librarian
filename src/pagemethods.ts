@@ -20,33 +20,43 @@ export class PageMethods {
 
     console.log(`  -> Song ${clipId} not visible. Scrolling to find...`);
     let stallCount = 0;
-    while (stallCount < 2) {
-      await Importer.currentScrollContainer.evaluate((el) => {
-        el.scrollTop += el.clientHeight * 0.8;
-      });
-      await delay(1500);
-
-      songRow = await Importer.currentScrollContainer.$(songSelector);
-      if (songRow) {
-        await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
-        await delay(500);
-        console.log(`  -> Found ${clipId} after scrolling.`);
-        return songRow;
-      }
-
-      const isAtBottom = await Importer.currentScrollContainer.evaluate(
-        (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
-      );
-
-      if (isAtBottom) {
-        console.log("  -> Reached bottom. Resetting to top for another pass.");
-        await Importer.currentScrollContainer.evaluate((el) =>
-          el.scrollTo(0, 0)
-        );
-        stallCount++;
+    while (Importer.morePagesAvailable) {
+      while (stallCount < 2) {
+        await Importer.currentScrollContainer.evaluate((el) => {
+          el.scrollTop += el.clientHeight * 0.8;
+        });
         await delay(1500);
+
+        songRow = await Importer.currentScrollContainer.$(songSelector);
+        if (songRow) {
+          await songRow.evaluate((el) =>
+            el.scrollIntoView({ block: "center" })
+          );
+          await delay(500);
+          console.log(`  -> Found ${clipId} after scrolling.`);
+          return songRow;
+        }
+
+        const isAtBottom = await Importer.currentScrollContainer.evaluate(
+          (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
+        );
+
+        if (isAtBottom) {
+          console.log(
+            "  -> Reached bottom. Resetting to top for another pass."
+          );
+          await Importer.currentScrollContainer.evaluate((el) =>
+            el.scrollTo(0, 0)
+          );
+          stallCount++;
+          await delay(1500);
+        }
       }
+      console.log("  -> Reached bottom again. Going to next page.");
+      stallCount = 0;
+      const navigated = await this.paginationOps(page, true, false);
     }
+
     console.error(`  -> Could not find song ${clipId} after scrolling.`);
     return null;
   }
@@ -68,7 +78,8 @@ export class PageMethods {
   }
 
   async clickNextPageButton(
-    page: puppeteer.Page | undefined
+    page: puppeteer.Page | undefined,
+    checkOnly: boolean = false
   ): Promise<boolean> {
     if (!page) {
       return false;
@@ -85,16 +96,22 @@ export class PageMethods {
         ":scope >>> div.md\\:flex > div > div.flex-col > div button:nth-of-type(2) > svg"
       ),
     ]).setTimeout(5000);
+    if (checkOnly) {
+      return nextButton !== null;
+    }
     if (nextButton) {
       await nextButton.click();
       return true;
     }
     return false;
-    //returns false if
+    //returns false if not found
   }
 
-  async clickPreviousPageButton(page: puppeteer.Page): Promise<boolean> {
-    const nextButton = puppeteer.Locator.race([
+  async clickPreviousPageButton(
+    page: puppeteer.Page,
+    checkOnly: boolean
+  ): Promise<boolean> {
+    const prevButton = puppeteer.Locator.race([
       page.locator(
         '::-p-aria(Previous Page) >>>> ::-p-aria([role=\\"image\\"])'
       ),
@@ -108,32 +125,63 @@ export class PageMethods {
         ":scope >>> div.md\\:flex > div > div.flex-col > div button:nth-of-type(1) > svg"
       ),
     ]).setTimeout(5000);
-    if (nextButton) {
-      await nextButton.click();
+    if (checkOnly) {
+      return prevButton !== null;
+    }
+    if (prevButton) {
+      await prevButton.click();
       return true;
     }
     return false;
   }
-  async getElementByXpath(
+  getElementByXpath(document: Document, xpath: string): Element | null {
+    let temp = document.querySelector(`::-p-xpath(${xpath})`);
+    return temp;
+  }
+  async getElementByXpathFromPage(
     page: puppeteer.Page,
     xpath: string
   ): Promise<puppeteer.ElementHandle<Element> | null> {
     return await page.$(`::-p-xpath(${xpath})`);
   }
-  async getValueFromElementByXpath(
+
+  async getValueFromElementByXpathByPage(
     page: puppeteer.Page,
     xpath: string,
     defaultValue: string,
     valueKey?: string
   ): Promise<string> {
+    let evalFunc: any;
+    if (!valueKey) {
+      evalFunc = (el: Element) => el.textContent;
+    } else {
+      evalFunc = (el: Element, key: string) => el.getAttribute(key!);
+    }
+    const FullElement = await this.getElementByXpathFromPage(page, xpath);
+    const retValue =
+      (await FullElement?.evaluate(evalFunc, valueKey)) || defaultValue;
+    return retValue;
+  }
+
+  getValueFromElementByXpath(
+    document: Document,
+    xpath: string,
+    defaultValue: string,
+    valueKey?: string
+  ): string {
     let evalParm: any;
     if (!valueKey) {
       evalParm = (el: Element) => el.textContent;
     } else {
       evalParm = (el: Element) => el.getAttribute(valueKey);
     }
-    const FullElement = await this.getElementByXpath(page, xpath);
-    const retValue = (await FullElement?.evaluate(evalParm)) || defaultValue;
+    let retValue = defaultValue;
+    const FullElement = this.getElementByXpath(document, xpath);
+    if (!valueKey) {
+      retValue = FullElement?.textContent || defaultValue;
+    } else {
+      retValue = FullElement?.getAttribute(valueKey) || defaultValue;
+    }
     return retValue;
   }
   async getCurrentPageNumber(page: puppeteer.Page): Promise<number> {
@@ -141,7 +189,7 @@ export class PageMethods {
     const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
     await page.waitForSelector(scrollContainerSelector, { timeout: 30000 });
 
-    const pageNumberText = await this.getValueFromElementByXpath(
+    const pageNumberText = await this.getValueFromElementByXpathByPage(
       page,
       pageNumXpath,
       "1"
@@ -158,22 +206,39 @@ export class PageMethods {
   currentPage: number = 1;
   async paginationOps(
     page: puppeteer.Page,
-    goToNext: boolean
+    goToNext: boolean,
+    checkOnly: boolean
   ): Promise<boolean> {
     let success: boolean = false;
     if (goToNext) {
-      success = await this.clickNextPageButton(page);
+      success = await this.clickNextPageButton(page, checkOnly);
       if (success) {
-        console.log("  -> Navigated to next page.");
+        console.log(
+          checkOnly
+            ? "  -> More pages available."
+            : "  -> Navigated to next page."
+        );
       } else {
-        console.log("  -> Next page button not found.");
+        console.log(
+          checkOnly
+            ? "  -> No more pages available."
+            : "  -> Next page button not found."
+        );
       }
     } else {
-      success = await this.clickPreviousPageButton(page);
+      success = await this.clickPreviousPageButton(page, checkOnly);
       if (success) {
-        console.log("  -> Navigated to previous page.");
+        console.log(
+          checkOnly
+            ? "  -> Previous page available."
+            : "  -> Navigated to previous page."
+        );
       } else {
-        console.log("  -> Previous page button not found.");
+        console.log(
+          checkOnly
+            ? "  -> This is the first page available."
+            : "  -> Previous page button not found."
+        );
       }
     }
     Importer.session.detach();

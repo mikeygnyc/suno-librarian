@@ -3,8 +3,8 @@ import * as fs from "fs";
 import * as puppeteer from "puppeteer";
 import { AppConfig } from "./ConfigHandler.js";
 import { ISongData } from "./ISongData.js";
-import { TFileStatus } from "./TDownloadStatus.js";
-import { ProcessMetadata } from "./MetadataHandler.js";
+import { TFileStatus } from "./TFileStatus.js";
+import { MetadataProcessor } from "./MetadataHandler.js";
 import * as readlinePs from "readline/promises";
 import { GlobalPageMethods } from "./pagemethods.js";
 import { Converter } from "./FileHandler.js";
@@ -24,6 +24,11 @@ export class Scraper {
         headless: false, // Set to true for headless mode, false for visible browser
         executablePath: AppConfig.chromeExecutablePath,
         args: ["--remote-debugging-port=9222", `--user-data-dir=${tmpDir}`],
+        defaultViewport: {
+          width: 1280,
+          height: 720,
+        },
+        timeout: 60000,
       });
 
       this.page = await this.browser.newPage();
@@ -48,7 +53,6 @@ export class Scraper {
   }
 
   browser!: puppeteer.Browser;
-  exhaustedSearch: boolean = false;
   session!: puppeteer.CDPSession;
   async scrapeAndDownload() {
     try {
@@ -67,6 +71,7 @@ export class Scraper {
         console.log(`Successfully connected to page: ${this.page.url()}`);
       }
       await this.getDataFromPage(this.session);
+      console.log("Scrape and download process completed.");
     } catch (error) {
       console.error("A critical error occurred:", error);
     } finally {
@@ -80,7 +85,7 @@ export class Scraper {
   async findScrollContainer() {
     const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
     await this.page.waitForSelector(scrollContainerSelector, {
-      timeout: 30000,
+      timeout: 40000,
     });
     //@ts-ignore
     const scrollContainers = await this.page.$$<HTMLDivElement>(
@@ -92,6 +97,16 @@ export class Scraper {
     console.log("Successfully identified the nested scroll container.");
     this.currentScrollContainer = scrollContainer;
     return;
+  }
+  private dateReviver(key: string, value: any): any {
+    // Check if the value is a string and matches an ISO date format
+    if (
+      typeof value === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)
+    ) {
+      return new Date(value);
+    }
+    return value;
   }
 
   async sessionStarter() {
@@ -133,46 +148,31 @@ export class Scraper {
       console.log("Found existing metadata file. Loading...");
       try {
         const existingSongs: ISongData[] = JSON.parse(
-          fs.readFileSync(metadataPath, "utf-8")
+          fs.readFileSync(metadataPath, "utf-8"), this.dateReviver
         );
-        existingSongs.forEach((song) => this.allSongs.set(song.clipId, song));
+        existingSongs.forEach((song) => {
+          this.allSongs.set(song.clipId, song);
+        });
       } catch (error) {}
       console.log(`Loaded ${this.allSongs.size} songs from file.`);
     }
 
     // Scrape page for all songs to discover new ones
-    await this.discoverSongs();
-    while (this.morePagesAvailable) {
+
+    while (this.pagesSearched === 0 || this.morePagesAvailable) {
+      await this.discoverSongs();
       const songsToProcess = await this.buildProcessingQueue();
+      await this.processSongs(songsToProcess);
+      console.log("--- All songs have been processed on this this.page. ---");
       if (songsToProcess.length === 0) {
         console.log(
           "All discovered songs have already been downloaded. Exiting."
         );
         return;
-        // if (this.exhaustedSearch) {
-        //   console.log(
-        //     "All discovered songs have already been downloaded. Exiting."
-        //   );
-        //   return;
-        // } else {
-        //   this.exhaustedSearch = true;
-        // }
-
-        // if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
-        //   console.log("--- All songs discovered. No more pages found. ---");
-        //   return;
-        // } else {
-        //   console.log("Moving to next page");
-        //   await delay(5000);
-        //   this.session.detach();
-        //   await this.scrapeAndDownload();
-        // }
       }
-      // --- START PROCESSING ---
-
-      await this.processSongs(songsToProcess);
-      await delay(3000);
-      console.log("--- All songs have been processed on this this.page. ---");
+    }
+    if (!this.morePagesAvailable) {
+      console.log("--- No more pages found. ---");
     }
 
     // if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
@@ -198,7 +198,7 @@ export class Scraper {
     console.log(
       `Total songs: ${this.allSongs.size}. Songs to process: ${songsToProcess.length}.`
     );
-    ProcessMetadata.saveMainMetadataFile(); // Save the merged list right away
+    MetadataProcessor.saveMainMetadataFile(); // Save the merged list right away
     return songsToProcess;
   }
   private async processSongs(songsToProcess: ISongData[]) {
@@ -222,7 +222,7 @@ export class Scraper {
         songObject.wavStatus = "SKIPPED";
         songObject.flacStatus = "SKIPPED";
         songObject.alacStatus = "SKIPPED";
-        ProcessMetadata.saveMainMetadataFile();
+        MetadataProcessor.saveMainMetadataFile();
         continue;
       }
 
@@ -230,7 +230,7 @@ export class Scraper {
       await this.downloadMp3(songObject);
       // --- WAV Download ---
       await this.downloadWav(songObject, song);
-      ProcessMetadata.saveMainMetadataFile();
+      MetadataProcessor.saveMainMetadataFile();
       console.log(`--- Finished processing "${song.title}". Pausing... ---`);
     }
     return;
@@ -400,7 +400,7 @@ export class Scraper {
         songObject.mp3Status = "FAILED";
         await this.page.keyboard.press("Escape"); // Reset state
       }
-      ProcessMetadata.saveMainMetadataFile(); // Save status immediately
+      MetadataProcessor.saveMainMetadataFile(); // Save status immediately
       await delay(1000);
     }
     return;
@@ -408,163 +408,235 @@ export class Scraper {
 
   private async discoverSongs() {
     if (this.pagesSearched > 0) {
-      this.morePagesAvailable = await GlobalPageMethods.paginationOps(
-        this.page,
-        true
-      );
+      console.log("Moving to next page");
+      await GlobalPageMethods.paginationOps(this.page, true, false);
+      await delay(5000);
     } else {
       await this.findScrollContainer();
     }
-    if (this.morePagesAvailable) {
-      console.log(`Moving to next page to discover more songs..`);
-      await delay(5000);
-    } else {
-      if (this.pagesSearched > 0) {
-        console.log(
-          `Discovery complete. Total songs discovered: ${this.allSongs.size}.`
-        );
+    let rows = await this.page.$$(this.ROW_SELECTOR);
+    if (!rows) {
+      console.log(`Waiting for rows`);
+      while (!rows) {
+        console.log(`...continuing to wait for rows`);
+        rows = await this.page.$$(this.ROW_SELECTOR);
       }
     }
+    const discoveredSongs: ISongData[] = [];
+    let foundIds = new Set<string>();
+    Array.from(this.allSongs.keys()).map((id: string) => {
+      foundIds.add(id);
+    });
+    let firstRowProcessed: boolean = false;
 
-    // 1. Extract ONLY simple DOM data inside $$eval
-    const discoveredSongsBasic = await this.page.$$eval(
-      'div[data-testid="song-row"]',
-      (rows) =>
-        rows.map((row) => {
-          const clipId = row.getAttribute("data-clip-id") || "";
-          const titleEl = row.querySelector("span[title] a span");
-          const title = titleEl ? titleEl.textContent : "Untitled";
-          const styleEl = row.querySelector("div.flex.flex-row > div[title]");
-          const style = styleEl?.getAttribute("title") || null;
-          const imgEl = row.querySelector('img[alt="Song Image"]');
+    for (const row of rows) {
+      try {
+        // --- Row-level extraction ---
+        const clipId =
+          (await row.evaluate((r) => r.getAttribute("data-clip-id"))) ?? "";
+
+        if (!clipId) continue;
+        if (foundIds.has(clipId)) {
+          console.log(` -> Already processed clipId: ${clipId}. Skipping.`);
+          continue;
+        }
+        console.log(` -> Examining row for clipId: ${clipId}`);
+        const rowXpath = `//div[@data-react-aria-pressable='true' and @data-key='${clipId}']`;
+        const rowSpecs = await this.page.$$(`::-p-xpath(${rowXpath})`);
+        let rowSpec: puppeteer.ElementHandle<Element> | null = null;
+        //rows per song are doubled for who knows what reason, try to click each until one works. silently fail the rest
+        for (const rowSpecTest of rowSpecs) {
+          try {
+            await rowSpecTest.scrollIntoView();
+            await delay(500);
+            await rowSpecTest.click({
+              offset: {
+                x: 307,
+                y: 21.75,
+              },
+            });
+            rowSpec = rowSpecTest;
+            foundIds.add(clipId);
+          } catch (err) {
+            continue;
+          }
+        }
+        //we found the good one, process it. keyboard actions work better than mouse for some reason
+        if (rowSpec !== null) {
+          if (!firstRowProcessed) {
+            //first row needs special handling to get focus right
+            firstRowProcessed = true;
+            await this.page.keyboard.press("ArrowDown");
+            await this.page.keyboard.press("ArrowUp");
+          }
+          await this.page.keyboard.press("Enter");
+          await this.page.keyboard.press("ArrowLeft");
+          await delay(500);
+          console.log(` -> Processing data for clipId: ${clipId}`);
+          //these are all from the row itself
+          const title =
+            (await this.rowQueryTextOrNull(row, "span[title] a span")) ??
+            "Untitled";
+          const style =
+            (await this.rowGetAttrOrNull(
+              row,
+              "div.flex.flex-row > div[title]",
+              "title"
+            )) ?? null;
           const thumbnail =
-            imgEl?.getAttribute("data-src") ||
-            imgEl?.getAttribute("src") ||
+            (await this.rowGetAttrOrNull(
+              row,
+              'img[alt="Song Image"]',
+              "data-src"
+            )) ||
+            (await this.rowGetAttrOrNull(
+              row,
+              'img[alt="Song Image"]',
+              "src"
+            )) ||
             null;
-          const durationEl = row.querySelector(
-            'div[aria-label="Play Song"] span.absolute'
-          );
-          const duration = durationEl?.textContent?.trim() || null;
-          const modelEl = Array.from(row.querySelectorAll("span")).find((el) =>
-            el.textContent?.trim().startsWith("v")
-          );
-          const model = modelEl?.textContent?.trim() || null;
-          const likedEl = row.querySelector(
-            'button[aria-label="Playbar: Like"]'
-          );
-          const liked =
-            likedEl?.classList.contains("text-foreground-primary") ?? false;
+          const duration =
+            (await this.rowQueryTextOrNull(
+              row,
+              'div[aria-label="Play Song"] span.absolute'
+            )) ?? null;
 
-          return {
-            clipId,
+          const model = await row.evaluate((el: Element) => {
+            const spans = Array.from(el.querySelectorAll("span"));
+            const found = spans.find((s) =>
+              s.textContent?.trim().startsWith("v")
+            );
+            return found?.textContent?.trim() ?? null;
+          }, row);
+
+          const liked = await row.evaluate((el: Element) => {
+            const btn = el.querySelector('button[aria-label="Playbar: Like"]');
+            return btn
+              ? btn.classList.contains("text-foreground-primary")
+              : false;
+          }, row);
+
+          const songUrl = `https://suno.com/song/${clipId}`;
+          //these are from the detail panel
+          // --- Detail panel extraction ---
+          const artistName =
+            await GlobalPageMethods.getValueFromElementByXpathByPage(
+              this.page,
+              this.ARTIST_XPATH,
+              "Unknown Artist",
+              "title"
+            );
+
+          const lyrics =
+            await GlobalPageMethods.getValueFromElementByXpathByPage(
+              this.page,
+              this.LYRICS_XPATH,
+              "[Instrumental]"
+            );
+
+          const creationDateStr =
+            await GlobalPageMethods.getValueFromElementByXpathByPage(
+              this.page,
+              this.CREATION_DATE_XPATH,
+              "January 1 1970 at 12:00AM"
+            );
+          const [datePart, timePart] = creationDateStr.split(" at ");
+
+          const creationDate = new Date(`${datePart} ${timePart}`);
+
+          //we're only getting the id for the any remix parent, as otherwise we'd have to load that page too which is overkill here
+          // (or parse the entire library first, if it's even a remix of your song)
+          const remixParentHref =
+            await GlobalPageMethods.getValueFromElementByXpathByPage(
+              this.page,
+              this.REMIX_PARENT_XPATH,
+              "",
+              "href"
+            );
+          const remixParent = remixParentHref?.split("/")[2] ?? undefined;
+          //control setting values are a little more complex
+          const controlVals = new Map<string, string>();
+          for (let i = 1; i <= 3; i++) {
+            const nameXpath = `${this.CONTROL_NAME_PREFIX}[${i}]/span[1]/text()[1]`;
+            const valueXpath = `${this.CONTROL_NAME_PREFIX}[${i}]/span[2]`;
+            const key =
+              await GlobalPageMethods.getValueFromElementByXpathByPage(
+                this.page,
+                nameXpath,
+                ""
+              );
+            const val =
+              await GlobalPageMethods.getValueFromElementByXpathByPage(
+                this.page,
+                valueXpath,
+                ""
+              );
+            if (key && val) controlVals.set(key, val);
+          }
+          const weirdness = this.parsePercentDefault(
+            controlVals.get("Weirdness"),
+            50
+          );
+          const styleStrength = this.parsePercentDefault(
+            controlVals.get("Style Strength"),
+            50
+          );
+          const audioStrength = this.parsePercentDefault(
+            controlVals.get("Audio Strength"),
+            25
+          );
+
+          // tags are also a bit more complex and sometimes inconsistent
+          let tags: string[] = [];
+          const tagsElementHandle =
+            await GlobalPageMethods.getElementByXpathFromPage(
+              this.page,
+              this.TAGS_XPATH
+            );
+          if (
+            tagsElementHandle &&
+            typeof tagsElementHandle.evaluate === "function"
+          ) {
+            tags = await tagsElementHandle.evaluate(
+              (el: Element) =>
+                Array.from(el.querySelectorAll("div, span, a"))
+                  .map((x) => x.textContent?.trim())
+                  .filter(Boolean) as string[]
+            );
+          }
+
+          discoveredSongs.push({
             title,
+            clipId,
+            songUrl,
             style,
             thumbnail,
-            duration,
             model,
+            duration,
             liked,
-          };
-        })
-    );
+            mp3Status: "PENDING",
+            wavStatus: "PENDING",
+            alacStatus: "PENDING",
+            flacStatus: "PENDING",
+            artistName,
+            lyrics,
+            creationDate,
+            weirdness,
+            styleStrength,
+            audioStrength,
+            remixParent,
+            tags,
+          });
 
-    // 2. Now process each row with async Node-side logic
-    const discoveredSongs: ISongData[] = [];
-
-    for (const item of discoveredSongsBasic) {
-      if (!item.clipId) continue;
-
-      const clipId = item.clipId;
-
-      const songUrl = `https://suno.com/song/${clipId}`;
-
-      const artistXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[1]/div/a`;
-
-      const artistName = await GlobalPageMethods.getValueFromElementByXpath(
-        this.page,
-        artistXpath,
-        "Unknown Artist",
-        "title"
-      );
-
-      const lyricsXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[1]`;
-      const lyrics = await GlobalPageMethods.getValueFromElementByXpath(
-        this.page,
-        lyricsXpath,
-        "[Instrumental]"
-      );
-
-      const creationDateXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[2]`;
-      const creationDateStr =
-        await GlobalPageMethods.getValueFromElementByXpath(
-          this.page,
-          creationDateXpath,
-          "1970-01-01T00:00:00Z"
-        );
-      const creationDate = new Date(creationDateStr);
-
-      const remixParentXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[4]/div/div/div/div[2]/div/div[2]/a`;
-      const remixParentHref =
-        await GlobalPageMethods.getValueFromElementByXpath(
-          this.page,
-          remixParentXpath,
-          "",
-          "href"
-        );
-      const remixParent = remixParentHref?.split("/")[2] || null;
-
-      // Controls
-      const controlValsMap = new Map<string, string>();
-      for (let i = 1; i <= 3; i++) {
-        const nameXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li[${i}]/span[1]/text()[1]`;
-        const valXpath = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li[${i}]/span[2]`;
-
-        const key = await GlobalPageMethods.getValueFromElementByXpath(
-          this.page,
-          nameXpath,
-          ""
-        );
-        const val = await GlobalPageMethods.getValueFromElementByXpath(
-          this.page,
-          valXpath,
-          ""
-        );
-
-        if (key && val) controlValsMap.set(key, val);
+          await delay(30);
+        }
+      } catch (err) {
+        console.warn(`Failed to extract row  — skipping. Error:`, err);
+        continue;
+      } finally {
+        await this.page.keyboard.press("ArrowDown");
       }
-
-      const weirdness = parseInt(controlValsMap.get("Weirdness") ?? "50%");
-      const styleStrength = parseInt(
-        controlValsMap.get("Style Strength") ?? "50%"
-      );
-      const audioStrength = parseInt(
-        controlValsMap.get("Audio Strength") ?? "25%"
-      );
-
-      discoveredSongs.push({
-        title: item.title,
-        clipId,
-        songUrl,
-        style: item.style,
-        thumbnail: item.thumbnail,
-        model: item.model,
-        duration: item.duration,
-        liked: item.liked,
-        mp3Status: "PENDING",
-        wavStatus: "PENDING",
-        alacStatus: "PENDING",
-        flacStatus: "PENDING",
-        artistName,
-        lyrics,
-        creationDate,
-        weirdness,
-        styleStrength,
-        audioStrength,
-        remixParent,
-        tags: [],
-      });
     }
-
-   
 
     // Merge discovered songs with existing data
     let foundThisPass: number = 0;
@@ -572,21 +644,87 @@ export class Scraper {
       if (!this.allSongs.has(song.clipId)) {
         this.allSongs.set(song.clipId, song);
         foundThisPass++;
-        await ProcessMetadata.saveSongMetadata(song);
+        await MetadataProcessor.saveSongMetadata(song);
       }
     }
     this.pagesSearched++;
     this.totalDiscoveredSongs = foundThisPass + this.totalDiscoveredSongs;
     console.log(
-      `Discovered ${foundThisPass} songs on page ${GlobalPageMethods.currentPage}, ${this.totalDiscoveredSongs} total so far.`
+      `Discovered ${foundThisPass} new songs on page ${GlobalPageMethods.currentPage}, ${this.totalDiscoveredSongs} total so far.`
     );
-    ProcessMetadata.saveMainMetadataFile();
+    MetadataProcessor.saveMainMetadataFile();
+    this.morePagesAvailable = await GlobalPageMethods.paginationOps(
+      this.page,
+      true,
+      true
+    );
+    if (!this.morePagesAvailable) {
+      console.log(
+        `Discovery complete. Total songs discovered: ${this.allSongs.size}.`
+      );
+    }
   }
+
+  // --- Row helpers ---
+  private async rowQueryTextOrNull(
+    row: puppeteer.ElementHandle<Element>,
+    selector: string
+  ) {
+    try {
+      return await row.$eval(selector, (el) => el.textContent?.trim() ?? null);
+    } catch {
+      return null;
+    }
+  }
+
+  private async rowGetAttrOrNull(
+    row: puppeteer.ElementHandle<Element>,
+    selector: string,
+    attrName: string
+  ) {
+    try {
+      return await row.$eval(
+        selector,
+        (el, attr) => el.getAttribute(attr),
+        attrName
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private parsePercentDefault(
+    input: string | undefined | null,
+    def: number
+  ): number {
+    if (!input) return def;
+    const parsed = parseInt(input.replace("%", ""), 10);
+    return Number.isNaN(parsed) ? def : parsed;
+  }
+
   totalDiscoveredSongs: number = 0;
   morePagesAvailable: boolean = true;
   pagesSearched: number = 0;
+  // Configuration / constants
+  ROW_SELECTOR = 'div[data-testid="song-row"]';
+  CLICK_ROW_XPATH =
+    '::-p-xpath(//*[@data-testid="song-row"]/div/div/div[2]/div[1]/div[1])';
+  DETAIL_PANEL_ANCHOR_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]`; // root of detail panel
+  ARTIST_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[1]/div/a`;
+  LYRICS_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[1]`;
+  CREATION_DATE_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[2]`;
+  REMIX_PARENT_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[4]/div/div/div/div[2]/div/div[2]/a`;
+  CONTROL_NAME_PREFIX = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li`;
+  TAGS_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[2]/div`;
 
-  private async extractMetadata(row: puppeteerElementHandle<HTMLDivElement>) {}
+  CLICK_RETRIES = 3;
+  CLICK_RETRY_DELAY_MS = 300;
+  DETAIL_WAIT_TIMEOUT_MS = 3000;
+  ROW_SCROLL_MARGIN = {
+    behavior: "auto",
+    block: "center",
+    inline: "center",
+  };
 }
 
 export let Importer = new Scraper();
