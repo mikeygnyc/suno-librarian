@@ -87,22 +87,21 @@ class Initializer {
     }
   }
 }
-console.log(process.env.PATH);
-let AppInitializer = new Initializer();
-async function dostart() {
-  if (argv.processOnly){
-    await processOnly();
-    console.log("****Done running converters. Exiting.****")
-    return;
-  }
-  if (argv.clean){
+
+async function dostart() {if (argv.clean){
     console.log("****Cleaning download directorys****");
     const downloadRootDirectory = path.resolve(
       AppConfig.downloadRootDirectoryPath
     );
     fs.rmSync(downloadRootDirectory, {recursive:true, force:true});
-
   }
+  let AppInitializer = new Initializer();
+  if (argv.processOnly){
+    await processOnly();
+    console.log("****Done running converters. Exiting.****")
+    return;
+  }
+ 
   await Importer.Initialize();
   await Importer.scrapeAndDownload();
 }
