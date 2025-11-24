@@ -131,14 +131,14 @@ class MetadataHandler {
         metadata.mp3Status === "DOWNLOADED") ||
       metadata.mp3Status === "CREATED"
     ) {
-      this.embedMetadataInMp3(metadata);
+      await this.embedMetadataInMp3(metadata);
     }
 
     if (
       AppConfig.audioFormats.includes("alac") &&
       metadata.alacStatus === "CREATED"
     ) {
-      this.embedMetadataInAlac(metadata);
+      await this.embedMetadataInAlac(metadata);
     }
     console.log(
       `      <- Done embedding metadata into converted files for ${metadata.clipId}`

@@ -96,7 +96,7 @@ export class FileHandler {
         }
       }
     }
-    MetadataProcessor.embedMetadataInFile(metadata);
+    await MetadataProcessor.embedMetadataInFile(metadata);
     return;
   }
 
