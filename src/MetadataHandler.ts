@@ -367,9 +367,14 @@ class MetadataHandler {
       `set ${commandType}:'${path}' '${label}'`
     );
   }
+  replacer(value:string):string{
+    let retval = value.replaceAll(`'`, `\\'`);
+    console.log(retval);
+    return retval;
+  }
   private createKid3Cmd(fieldName: string, value: string): string[] {
     return this.createKid3CliCommandAsArgs(
-      `set ${fieldName} '${value.replaceAll(`'`, `\'`)}'`
+      `set ${fieldName} '${this.replacer(value)}'`
     );
   }
   private createKid3CustomFieldCommands(
@@ -378,7 +383,7 @@ class MetadataHandler {
   ): string[] {
     return [
       ...this.createKid3CliCommandAsArgs(
-        `set comment '${value.replaceAll("'", `\``)}'`
+        `set comment '${this.replacer(value)}'`
       ),
       ...this.createKid3CliCommandAsArgs(
         `set comment.description '${fieldName}'`
@@ -392,11 +397,8 @@ class MetadataHandler {
     const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
     console.log(`      -> Embedding metadata into ${mp3Path}`);
 
-    const title = (metadata.title ?? "Untitled").replaceAll("'", `\'`);
-    const artist = (metadata.artistName ?? "Unknown Artist").replaceAll(
-      "'",
-      `\'`
-    );
+    const title = (metadata.title ?? "Untitled");
+    const artist = (metadata.artistName ?? "Unknown Artist");
     const year = metadata.creationDate
       ? metadata.creationDate.toISOString()
       : new Date(Date.now()).toISOString();
