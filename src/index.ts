@@ -100,7 +100,7 @@ async function dostart() {
     const downloadRootDirectory = path.resolve(
       AppConfig.downloadRootDirectoryPath
     );
-    fs.rmdirSync(downloadRootDirectory);
+    fs.rmSync(downloadRootDirectory, {recursive:true, force:true});
 
   }
   await Importer.Initialize();
