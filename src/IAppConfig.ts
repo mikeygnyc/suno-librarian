@@ -7,7 +7,6 @@ export interface IAppConfig {
   useSunoMp3FileIfAvailable: boolean;
   convertedMp3BitrateKbps: number;
   saveImages: boolean;
-  saveMetadataJSON: boolean;
   saveMetadataSidecarFiles: boolean;
   saveLyricsInTextFiles: boolean;
   combinedSongsMetadataJsonFile: string;

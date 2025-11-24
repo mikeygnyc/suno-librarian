@@ -1,29 +1,58 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import * as puppeteer from "puppeteer";
 import { ISongData } from "./ISongData";
 import { AppConfig } from "./ConfigHandler";
 import { Importer } from "./scraper";
-import { TDirectoryType } from "./FileHandler";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { IToneJsonMeta } from "./IToneJsonMeta";
 const execFileAsync = promisify(execFile);
 
 class MetadataHandler {
   saveMainMetadataFile() {
-    if (!AppConfig.saveMetadataJSON) {
-      return;
+    try {
+      const metadataPath = path.join(
+        AppConfig.downloadRootDirectoryPath,
+        AppConfig.combinedSongsMetadataJsonFile
+      );
+      const songsArray = Array.from(this.allSongs.values());
+      fs.writeFileSync(metadataPath, JSON.stringify(songsArray, null, 2));
+    } catch (err) {
+      console.log(`caught error saving metadata file ${err}`);
     }
+  }
+  loadMainMetadataFile() {
     const metadataPath = path.join(
       AppConfig.downloadRootDirectoryPath,
-      "metadata",
       AppConfig.combinedSongsMetadataJsonFile
     );
-    const songsArray = Array.from(Importer.allSongs.values());
-    fs.writeFileSync(metadataPath, JSON.stringify(songsArray, null, 2));
+
+    if (fs.existsSync(metadataPath)) {
+      console.log("Found existing metadata file. Loading...");
+      try {
+        const existingSongs: ISongData[] = JSON.parse(
+          fs.readFileSync(metadataPath, "utf-8"),
+          this.dateReviver
+        );
+        existingSongs.forEach((song) => {
+          this.allSongs.set(song.clipId, song);
+        });
+      } catch (error) {}
+      console.log(`Loaded ${this.allSongs.size} songs from file.`);
+    }
   }
+  public dateReviver(key: string, value: any): any {
+    // Check if the value is a string and matches an ISO date format
+    if (
+      typeof value === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)
+    ) {
+      return new Date(value);
+    }
+    return value;
+  }
+  allSongs = new Map<string, ISongData>();
+
   async saveSongMetadata(meta: ISongData) {
     if (!AppConfig.saveMetadataSidecarFiles) {
       return;
@@ -46,12 +75,12 @@ class MetadataHandler {
     if (!AppConfig.saveLyricsInTextFiles && !AppConfig.embedLyricsInMetadata) {
       return;
     }
-    const metadataPath = path.join(
+    const lyricsPath = path.join(
       AppConfig.downloadRootDirectoryPath,
       "lyrics",
       `${metadata.clipId}.txt`
     );
-    fs.writeFileSync(metadataPath, `${metadata.lyrics}`);
+    fs.writeFileSync(lyricsPath, `${metadata.lyrics}`);
   }
   async saveImage(metadata: ISongData) {
     if (AppConfig.saveImages || AppConfig.embedImagesInConvertedFiles) {
@@ -84,9 +113,18 @@ class MetadataHandler {
     }
   }
   async embedMetadataInFile(metadata: ISongData) {
+    console.log(
+      `      -> Embedding metadata into converted files for ${metadata.clipId}`
+    );
     // Implement embedding metadata into audio files here
     if (!AppConfig.embedMetadataInCovertedFiles) {
       return;
+    }
+    if (
+      AppConfig.audioFormats.includes("flac") &&
+      metadata.flacStatus === "CREATED"
+    ) {
+      await this.embedMetadataInFlac(metadata);
     }
     if (
       (AppConfig.audioFormats.includes("mp3") &&
@@ -95,25 +133,20 @@ class MetadataHandler {
     ) {
       this.embedMetadataInMp3(metadata);
     }
-    if (
-      AppConfig.audioFormats.includes("flac") &&
-      metadata.flacStatus === "CREATED"
-    ) {
-      this.embedMetadataInFlac(metadata);
-    }
+
     if (
       AppConfig.audioFormats.includes("alac") &&
       metadata.alacStatus === "CREATED"
     ) {
       this.embedMetadataInAlac(metadata);
     }
-
-    // This is a placeholder for actual implementation
-    // console.log(
-    //   `      ->  Embedding metadata into ${filePath} for format ${format}`
-    // );
+    console.log(
+      `      <- Done embedding metadata into converted files for ${metadata.clipId}`
+    );
   }
   private async embedMetadataInFlac(metadata: ISongData) {
+    const flacPath = `${AppConfig.flacDirectoryPath}/${metadata.clipId}.flac`;
+    console.log(`      -> Embedding metadata into ${flacPath}`);
     //convert metadata JSON to k=v form and save as id_vorbis.txt
     let lines: string[] = [];
     lines.push(`TITLE=${metadata.title}`);
@@ -153,7 +186,6 @@ class MetadataHandler {
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
     }
-    const flacPath = `${AppConfig.flacDirectoryPath}/${metadata.clipId}.flac`;
     const metadataArgs: string[] = [
       `--preserve-modtime`,
       `--no-utf8-convert`,
@@ -180,77 +212,256 @@ class MetadataHandler {
     );
     await execFileAsync("metaflac", metadataArgs);
     fs.rmSync(tmpFilePath);
+    console.log(`      <- Done embedding metadata into ${flacPath}`);
   }
-  private embedMetadataInAlac(metadata: ISongData) {}
-  private async embedMetadataInMp3(metadata: ISongData) {
-    let toneJsonMeta: IToneJsonMeta = {
-      meta: {
-        artist: metadata.artistName ?? "",
-        recordingDate: metadata.creationDate
-          ? metadata.creationDate.toISOString()
-          : new Date(Date.now()).toISOString(),
-        title: metadata.title ?? "[UNTITLED]",
-        additionalFields: {
-          description: metadata.style ?? "",
-          contact: metadata.songUrl,
-          favorite: metadata.liked,
-          ai_model: `Suno ${metadata.model}`,
-          suno_id: metadata.clipId,
-          suno_tags: metadata.tags ? metadata.tags.join(",") : "",
-          suno_weirdness: `${metadata.weirdness}%`,
-          suno_style_strength: `${metadata.styleStrength}%`,
-          suno_audio_strength: `${metadata.audioStrength}%`,
-          remix_parent_id: metadata.remixParent,
-          lyrics: AppConfig.embedLyricsInMetadata
-            ? metadata.lyrics ?? undefined
-            : undefined,
-          comments: this.commentTagMunger(metadata),
-        },
-      },
-    };
-    const tmpFilePath = path.join(
-      AppConfig.downloadRootDirectoryPath,
-      "mp3",
-      `${metadata.clipId}_tone.json`
-    );
-    fs.writeFileSync(tmpFilePath, JSON.stringify(toneJsonMeta));
-
-    //tone tag fn.mp3 --taggers="ToneJson" --meta-tone-json-file fn_tone.json
-    const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
-    const metadataArgs: string[] = [
-      "tag",
-      `${mp3Path}`,
-      `--taggers="ToneJson"`,
-      `--meta-tone-json-file="${tmpFilePath}"`
+  private async embedMetadataInAlac(metadata: ISongData) {
+    const alacPath = `${AppConfig.alacDirectoryPath}/${metadata.clipId}.m4a`;
+    console.log(`      -> Embedding metadata into ${alacPath}`);
+    let parsleyArgs: string[] = [
+      alacPath,
+      "-W",
+      "--artist",
+      metadata.artistName ?? "Unknown Artist",
+      "--title",
+      metadata.title ?? "Untitled",
+      "--year",
+      metadata.creationDate
+        ? metadata.creationDate.toISOString()
+        : new Date(Date.now()).toISOString(),
+      "--description",
+      metadata.style ?? "[No Prompt]",
+      "--comment",
+      this.commentTagMunger(metadata),
     ];
-    let embeddedImage: boolean = false;
-    let imagePath: string = "";
+
+    parsleyArgs = [
+      ...parsleyArgs,
+      ...this.createMetaCustomAtomAlac(
+        "AMDL",
+        "text",
+        `Suno ${metadata.model}`,
+        "AIModel"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SURL",
+        "text",
+        metadata.songUrl,
+        "SongURL"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SCID",
+        "text",
+        metadata.clipId,
+        "SunoSongID"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SLIK",
+        "text",
+        String(metadata.liked),
+        "SunoLiked"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SWED",
+        "text",
+        `${metadata.weirdness}%`,
+        "SunoWeirdness"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SSST",
+        "text",
+        `${metadata.styleStrength}%`,
+        "SunoStyleStrength"
+      ),
+      ...this.createMetaCustomAtomAlac(
+        "SAST",
+        "text",
+        `${metadata.audioStrength}%`,
+        "SunoAudioStrength"
+      ),
+    ];
+
+    if (metadata.tags) {
+      parsleyArgs = [
+        ...parsleyArgs,
+        ...this.createMetaCustomAtomAlac(
+          "STAG",
+          "text",
+          `${metadata.tags}`,
+          "SunoTags"
+        ),
+      ];
+    }
+    if (metadata.remixParent) {
+      parsleyArgs = [
+        ...parsleyArgs,
+        ...this.createMetaCustomAtomAlac(
+          "SRMX",
+          "text",
+          `${metadata.remixParent}`,
+          "SunoRemixParent"
+        ),
+      ];
+    }
+    if (AppConfig.embedLyricsInMetadata) {
+      const lyricsFilePath = path.join(
+        AppConfig.downloadRootDirectoryPath,
+        "lyrics",
+        `${metadata.clipId}.txt`
+      );
+      parsleyArgs = [...parsleyArgs, "--lyricsFile", lyricsFilePath];
+    }
     if (AppConfig.embedImagesInConvertedFiles) {
-      embeddedImage = true;
-      imagePath = path.join(
+      const imagePath = path.join(
         //@ts-ignore
         AppConfig.imagesDirectoryPath,
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
+      parsleyArgs = [...parsleyArgs, "--artwork", imagePath];
     }
-    if (embeddedImage) {
-      metadataArgs.push(`--meta-cover-file="${imagePath}"`);
-    }
-    metadataArgs.push(mp3Path);
     console.log(
-      `      ->  running tone with command: tone ${metadataArgs.join(
+      `      ->  running atomic parsley with command: atomicparsley ${parsleyArgs.join(
         " "
       )}`
     );
-    await execFileAsync("tone", metadataArgs);
-    // tone tag --help
-    // tone tag input.mp3 --meta-title "a title"
-    // tone tag --debug --auto-import=covers --meta-additional-field ©st3=testing input.m4b --dry-run
-    // tone tag --auto-import=covers --auto-import=chapters --path-pattern="audiobooks/%g/%a/%s/%p - %n.m4b" --path-pattern="audiobooks/%g/%a/%z/%n.m4b" audiobooks/ --dry-run
-    // tone tag input.mp3 --script musicbrainz.js --script-tagger-parameter e2310769-2e68-462f-b54f-25ac8e3f1a21
+    await execFileAsync("atomicparsley", parsleyArgs);
 
-    //--taggers=ToneJson
+    const kid3JsonPath = path.join(
+      AppConfig.downloadRootDirectoryPath,
+      "flac",
+      `${metadata.clipId}.json`
+    );
+
+    console.log(`      <- Done embedding metadata into ${alacPath}`);
+  }
+  private createMetaCustomAtomAlac(
+    atomName: string,
+    argType: "text" | "file",
+    value: string,
+    fullName: string
+  ): string[] {
+    return [
+      "--rDNSatom",
+      `"${value}"`,
+      `name=${fullName}`,
+      "domain=com.apple.iTunes",
+      "--meta-uuid",
+      atomName,
+      argType,
+      `"${value}"`,
+    ];
+  }
+  private createKid3FileCmd(
+    commandType: string,
+    path: string,
+    label: string
+  ): string[] {
+    return this.createKid3CliCommandAsArgs(
+      `set ${commandType}:'${path}' '${label}'`
+    );
+  }
+  private createKid3Cmd(fieldName: string, value: string): string[] {
+    return this.createKid3CliCommandAsArgs(
+      `set ${fieldName} '${value.replaceAll(`'`, `\'`)}'`
+    );
+  }
+  private createKid3CustomFieldCommands(
+    fieldName: string,
+    value: string
+  ): string[] {
+    return [
+      ...this.createKid3CliCommandAsArgs(
+        `set comment '${value.replaceAll("'", `\``)}'`
+      ),
+      ...this.createKid3CliCommandAsArgs(
+        `set comment.description '${fieldName}'`
+      ),
+    ];
+  }
+  private createKid3CliCommandAsArgs(command: string): string[] {
+    return ["-c", `${command}`];
+  }
+  private async embedMetadataInMp3(metadata: ISongData) {
+    const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
+    console.log(`      -> Embedding metadata into ${mp3Path}`);
+
+    const title = (metadata.title ?? "Untitled").replaceAll("'", `\'`);
+    const artist = (metadata.artistName ?? "Unknown Artist").replaceAll(
+      "'",
+      `\'`
+    );
+    const year = metadata.creationDate
+      ? metadata.creationDate.toISOString()
+      : new Date(Date.now()).toISOString();
+    const description = metadata.style ?? "[No Prompt]";
+    const comment = this.commentTagMunger(metadata);
+    const website = metadata.songUrl; //WWW Audio File
+    const liked = metadata.liked;
+    const ai_model = `Suno ${metadata.model}`;
+    const tags = metadata.tags ? metadata.tags.join(",") : "";
+    const weirdness = `${metadata.weirdness}%`;
+    const style_strength = `${metadata.styleStrength}%`;
+    const audio_strength = `${metadata.audioStrength}%`;
+    const remix_parent_id = metadata.remixParent ?? "";
+    const suno_song_id = metadata.clipId ?? "";
+    let kid3Cmds: string[] = [
+      ...this.createKid3Cmd("title", title),
+      ...this.createKid3Cmd("artist", artist),
+      ...this.createKid3Cmd("year", year),
+      ...this.createKid3Cmd("date", year),
+      ...this.createKid3Cmd("description", description),
+      ...this.createKid3Cmd("WOAF", website),
+      ...this.createKid3CustomFieldCommands("liked", liked ? "true" : "false"),
+      ...this.createKid3CustomFieldCommands("ai_model", ai_model),
+      ...this.createKid3CustomFieldCommands("tags", tags),
+      ...this.createKid3CustomFieldCommands("weirdness", weirdness),
+      ...this.createKid3CustomFieldCommands("style_strength", style_strength),
+      ...this.createKid3CustomFieldCommands("audio_strength", audio_strength),
+      ...this.createKid3CustomFieldCommands("remix_parent_id", remix_parent_id),
+      ...this.createKid3CustomFieldCommands("suno_song_id", suno_song_id),
+      ...this.createKid3Cmd("comment", comment),
+    ];
+
+    if (AppConfig.embedLyricsInMetadata) {
+      const lyricsPath = path.join(
+        AppConfig.downloadRootDirectoryPath,
+        "lyrics",
+        `${metadata.clipId}.txt`
+      );
+      kid3Cmds = [
+        ...kid3Cmds,
+        ...this.createKid3FileCmd("USLT", lyricsPath, "Lyrics Description"),
+      ];
+    }
+    if (AppConfig.embedImagesInConvertedFiles) {
+      //@ts-ignore
+      const imageFile = `${metadata.clipId}${path.extname(metadata.thumbnail)}`;
+      const imagePath = path.join(
+        //@ts-ignore
+        AppConfig.imagesDirectoryPath,
+        //@ts-ignore
+        imageFile
+      );
+      kid3Cmds = [
+        ...kid3Cmds,
+        ...this.createKid3FileCmd("picture", imagePath, "Picture Description"),
+      ];
+    }
+    kid3Cmds = [
+      ...kid3Cmds,
+      ...this.createKid3CliCommandAsArgs("save"),
+      mp3Path,
+    ];
+
+    console.log(`      ->  running kid3-cli`);
+    console.log(`      ->  sending kid3-cli ${kid3Cmds.join(" ")}`);
+    await execFileAsync("kid3-cli", kid3Cmds);
+
+    const kid3JsonPath = path.join(
+      AppConfig.downloadRootDirectoryPath,
+      "flac",
+      `${metadata.clipId}.json`
+    );
   }
 
   private commentTagMunger(metadata: ISongData): string {
@@ -267,7 +478,3 @@ class MetadataHandler {
   }
 }
 export let MetadataProcessor = new MetadataHandler();
-
-//tone for mp3
-
-//atomic parsley for alac/m4a

@@ -25,6 +25,31 @@
       // This avoids the broken quoting in external terminals
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Launch (compiled ESM) Process Only",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dist/index.js",
+      "cwd": "${workspaceFolder}",
+      "args": ["--processOnly"],
+      // Allow ESM
+      "runtimeArgs": ["--enable-source-maps"],
+
+      // Correct: do NOT use runtimeVersion unless absolutely needed
+      // It causes nvm + env quoting issues
+      // "runtimeVersion": "24.11.1",
+
+      // VS Code can map TS breakpoints → JS
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      //"runtimeVersion": "24.11.1",
+      // Build first
+      "preLaunchTask": "tsc: build - tsconfig.json",
+
+      // This avoids the broken quoting in external terminals
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ]
 }

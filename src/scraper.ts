@@ -3,7 +3,6 @@ import * as fs from "fs";
 import * as puppeteer from "puppeteer";
 import { AppConfig } from "./ConfigHandler.js";
 import { ISongData } from "./ISongData.js";
-import { TFileStatus } from "./TFileStatus.js";
 import { MetadataProcessor } from "./MetadataHandler.js";
 import * as readlinePs from "readline/promises";
 import { GlobalPageMethods } from "./pagemethods.js";
@@ -98,16 +97,7 @@ export class Scraper {
     this.currentScrollContainer = scrollContainer;
     return;
   }
-  private dateReviver(key: string, value: any): any {
-    // Check if the value is a string and matches an ISO date format
-    if (
-      typeof value === "string" &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)
-    ) {
-      return new Date(value);
-    }
-    return value;
-  }
+
 
   async sessionStarter() {
     this.session = await this.browser.target().createCDPSession();
@@ -134,28 +124,11 @@ export class Scraper {
     });
     return this.session;
   }
-  allSongs = new Map<string, ISongData>();
+  
   async getDataFromPage(session: puppeteer.CDPSession) {
     // --- LOAD AND PREPARE DATA ---
     console.log("Starting data loading...");
-    const metadataPath = path.join(
-      AppConfig.downloadRootDirectoryPath,
-      "metadata",
-      "songs_metadata.json"
-    );
-
-    if (fs.existsSync(metadataPath)) {
-      console.log("Found existing metadata file. Loading...");
-      try {
-        const existingSongs: ISongData[] = JSON.parse(
-          fs.readFileSync(metadataPath, "utf-8"), this.dateReviver
-        );
-        existingSongs.forEach((song) => {
-          this.allSongs.set(song.clipId, song);
-        });
-      } catch (error) {}
-      console.log(`Loaded ${this.allSongs.size} songs from file.`);
-    }
+    MetadataProcessor.loadMainMetadataFile();
 
     // Scrape page for all songs to discover new ones
 
@@ -164,29 +137,32 @@ export class Scraper {
       const songsToProcess = await this.buildProcessingQueue();
       await this.processSongs(songsToProcess);
       console.log("--- All songs have been processed on this this.page. ---");
+
       if (songsToProcess.length === 0) {
-        console.log(
-          "All discovered songs have already been downloaded. Exiting."
-        );
-        return;
+        if (this.rowsProcessed === 0) {
+          console.log("No rows processed. Reattempting browser connection");
+          this.pagesSearched = 0;
+          await this.scrapeAndDownload();
+          return;
+        } else {
+          if (!this.morePagesAvailable) {
+            console.log(
+              "All discovered songs have already been downloaded. Exiting."
+            );
+            return;
+          }
+        }
       }
     }
     if (!this.morePagesAvailable) {
       console.log("--- No more pages found. ---");
     }
 
-    // if (!(await GlobalPageMethods.clickNextPageButton(this.page))) {
-    //   console.log("--- No more pages found. ---");
-    // } else {
-    //   await delay(5000);
-    //   this.session.detach();
-    //   await this.scrapeAndDownload();
-    // }
     return;
   }
   private async buildProcessingQueue(): Promise<ISongData[]> {
     // Create a queue of previously processed songs that need loading/downloading
-    const songsToProcess = Array.from(this.allSongs.values()).filter(
+    const songsToProcess = Array.from(MetadataProcessor.allSongs.values()).filter(
       (song) =>
         (AppConfig.useSunoMp3FileIfAvailable &&
           AppConfig.audioFormats.includes("mp3") &&
@@ -196,11 +172,12 @@ export class Scraper {
     );
 
     console.log(
-      `Total songs: ${this.allSongs.size}. Songs to process: ${songsToProcess.length}.`
+      `Total songs: ${MetadataProcessor.allSongs.size}. Songs to process: ${songsToProcess.length}.`
     );
     MetadataProcessor.saveMainMetadataFile(); // Save the merged list right away
     return songsToProcess;
   }
+  processSongCount: number = 0;
   private async processSongs(songsToProcess: ISongData[]) {
     for (const [index, song] of songsToProcess.entries()) {
       console.log(
@@ -208,15 +185,15 @@ export class Scraper {
           song.title
         } (${song.clipId}) ---`
       );
-      const songObject = this.allSongs.get(song.clipId)!;
+      const songObject = MetadataProcessor.allSongs.get(song.clipId)!;
 
       const songRow = await GlobalPageMethods.scrollSongIntoView(
         this.page,
-        song.clipId
+        songObject.clipId
       );
       if (!songRow) {
         console.error(
-          `Skipping "${song.title}" as it could not be scrolled into view.`
+          `Skipping "${songObject.title}" as it could not be scrolled into view.`
         );
         songObject.mp3Status = "SKIPPED";
         songObject.wavStatus = "SKIPPED";
@@ -229,14 +206,17 @@ export class Scraper {
       // --- MP3 Download ---
       await this.downloadMp3(songObject);
       // --- WAV Download ---
-      await this.downloadWav(songObject, song);
+      await this.downloadWav(songObject);
       MetadataProcessor.saveMainMetadataFile();
-      console.log(`--- Finished processing "${song.title}". Pausing... ---`);
+      this.processSongCount++;
+      console.log(
+        `--- Finished processing ${this.processSongCount} ${songObject.clipId} "${songObject.title}". Pausing... ---`
+      );
     }
     return;
   }
 
-  private async downloadWav(songObject: ISongData, song: ISongData) {
+  private async downloadWav(songObject: ISongData) {
     //don't do it if only mp3 is selected and use suno if available is selected
     let proceed: boolean = false;
     if (AppConfig.audioFormats.length > 1) {
@@ -269,14 +249,17 @@ export class Scraper {
           }
         }
 
-        await GlobalPageMethods.scrollSongIntoView(this.page, song.clipId); // Re-center element
+        await GlobalPageMethods.scrollSongIntoView(
+          this.page,
+          songObject.clipId
+        ); // Re-center element
         await this.page.keyboard.press("Escape");
         await delay(200);
 
         if (
           !(await GlobalPageMethods.clickVisibleMoreButton(
             this.page,
-            song.clipId
+            songObject.clipId
           ))
         )
           throw new Error("More button not clickable for WAV");
@@ -288,7 +271,7 @@ export class Scraper {
         if (downloadMenuItemWav) {
           await downloadMenuItemWav.hover();
         } else {
-          throw `Could not find download download menu item - wav for ${song.clipId}`;
+          throw `Could not find download download menu item - wav for ${songObject.clipId}`;
         }
 
         const wavButton = await this.page.waitForSelector(
@@ -298,7 +281,7 @@ export class Scraper {
         if (wavButton) {
           await wavButton.click();
         } else {
-          throw `Could not find download wav button for ${song.clipId}`;
+          throw `Could not find download wav button for ${songObject.clipId}`;
         }
 
         const modalTitleXPath =
@@ -319,7 +302,7 @@ export class Scraper {
         if (downloadButtonElement) {
           await downloadButtonElement.click();
         } else {
-          throw `Could not find download button element for ${song.clipId}`;
+          throw `Could not find download button element for ${songObject.clipId}`;
         }
 
         await GlobalPageMethods.waitUntilDownload(
@@ -405,7 +388,7 @@ export class Scraper {
     }
     return;
   }
-
+  rowsProcessed: number = 0;
   private async discoverSongs() {
     if (this.pagesSearched > 0) {
       console.log("Moving to next page");
@@ -415,7 +398,7 @@ export class Scraper {
       await this.findScrollContainer();
     }
     let rows = await this.page.$$(this.ROW_SELECTOR);
-    if (!rows) {
+    if (!rows || rows.length === 0) {
       console.log(`Waiting for rows`);
       while (!rows) {
         console.log(`...continuing to wait for rows`);
@@ -424,13 +407,14 @@ export class Scraper {
     }
     const discoveredSongs: ISongData[] = [];
     let foundIds = new Set<string>();
-    Array.from(this.allSongs.keys()).map((id: string) => {
+    Array.from(MetadataProcessor.allSongs.keys()).map((id: string) => {
       foundIds.add(id);
     });
     let firstRowProcessed: boolean = false;
 
     for (const row of rows) {
       try {
+        this.rowsProcessed++;
         // --- Row-level extraction ---
         const clipId =
           (await row.evaluate((r) => r.getAttribute("data-clip-id"))) ?? "";
@@ -448,7 +432,7 @@ export class Scraper {
         for (const rowSpecTest of rowSpecs) {
           try {
             await rowSpecTest.scrollIntoView();
-            await delay(500);
+            await delay(100);
             await rowSpecTest.click({
               offset: {
                 x: 307,
@@ -471,7 +455,7 @@ export class Scraper {
           }
           await this.page.keyboard.press("Enter");
           await this.page.keyboard.press("ArrowLeft");
-          await delay(500);
+          await delay(100);
           console.log(` -> Processing data for clipId: ${clipId}`);
           //these are all from the row itself
           const title =
@@ -641,8 +625,8 @@ export class Scraper {
     // Merge discovered songs with existing data
     let foundThisPass: number = 0;
     for (const song of discoveredSongs) {
-      if (!this.allSongs.has(song.clipId)) {
-        this.allSongs.set(song.clipId, song);
+      if (!MetadataProcessor.allSongs.has(song.clipId)) {
+        MetadataProcessor.allSongs.set(song.clipId, song);
         foundThisPass++;
         await MetadataProcessor.saveSongMetadata(song);
       }
@@ -660,7 +644,7 @@ export class Scraper {
     );
     if (!this.morePagesAvailable) {
       console.log(
-        `Discovery complete. Total songs discovered: ${this.allSongs.size}.`
+        `Discovery complete. Total songs discovered: ${MetadataProcessor.allSongs.size}.`
       );
     }
   }

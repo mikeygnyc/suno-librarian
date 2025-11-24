@@ -14,7 +14,7 @@ export class PageMethods {
 
     if (songRow) {
       await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
-      await delay(500);
+      await delay(250);
       return songRow;
     }
 
@@ -32,7 +32,7 @@ export class PageMethods {
           await songRow.evaluate((el) =>
             el.scrollIntoView({ block: "center" })
           );
-          await delay(500);
+          await delay(250);
           console.log(`  -> Found ${clipId} after scrolling.`);
           return songRow;
         }
@@ -49,7 +49,7 @@ export class PageMethods {
             el.scrollTo(0, 0)
           );
           stallCount++;
-          await delay(1500);
+          await delay(700);
         }
       }
       console.log("  -> Reached bottom again. Going to next page.");

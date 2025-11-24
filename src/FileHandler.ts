@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import { AppConfig } from "./ConfigHandler";
 import { ISongData } from "./ISongData";
-import { TAudioFormats } from "./TAudioFormats";
 import { promisify } from "util";
 import { execFile } from "child_process";
 import { IDownloadHandlingConfig } from "./IDownloadHandlingConfig";
@@ -75,9 +74,15 @@ export class FileHandler {
           try {
             const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
             console.log(`        ->  Converting ${metadata.clipId} to mp3`);
+            const imagePath = path.join(
+                //@ts-ignore
+                AppConfig.imagesDirectoryPath,
+                //@ts-ignore
+                `${metadata.clipId}${path.extname(metadata.thumbnail)}`
+              );
             await execFileAsync(
               "ffmpeg",
-              this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3")
+              this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3",imagePath)
             );
             metadata.mp3Status = "CREATED";
           } catch (error) {
@@ -230,9 +235,10 @@ export class FileHandler {
   createFfmpegExecArgs(
     outputPath: string,
     wavPath: string,
-    format: "alac" | "flac" | "mp3"
+    format: "alac" | "flac" | "mp3",
+    imagePath?:string
   ): string[] {
-    const wavPart: string[] = ["-y", "-i", wavPath];
+    let wavPart: string[] = ["-y", "-i", wavPath];
     let conversionPart: string[] = [];
     switch (format) {
       case "alac":
@@ -242,7 +248,28 @@ export class FileHandler {
         conversionPart = ["-c:a", "flac"];
         break;
       case "mp3":
+        if (AppConfig.embedImagesInConvertedFiles && imagePath){
+          let imageArgs:string[] = [
+              "-i",
+              imagePath,
+              "-map",
+              "0:a",
+              "-map",
+              "1:v",
+              "-c:1",
+              "copy",
+              "-id3v2_version",
+              "4",
+              "-metadata:s:v",
+              'title="Album cover"',
+              "-metadata:s:v",
+              'comment="Cover (front)"'
+          ]
+          wavPart = wavPart.concat(imageArgs);
+        }
+
         conversionPart = [
+          
           "-c:a",
           "libmp3lame",
           "-b:a",

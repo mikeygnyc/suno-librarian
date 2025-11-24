@@ -4,7 +4,6 @@
   "useSunoMp3FileIfAvailable": true,
   "convertedMp3BitrateKbps": 320,
   "saveImages": true,
-  "saveMetadataJSON": true,
   "saveMetadataSidecarFiles": true,
   "saveLyricsInTextFiles": true,
   "combinedSongsMetadataJsonFile": "songs_metadata.json",
