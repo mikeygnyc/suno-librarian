@@ -95,6 +95,14 @@ async function dostart() {
     console.log("****Done running converters. Exiting.****")
     return;
   }
+  if (argv.clean){
+    console.log("****Cleaning download directorys****");
+    const downloadRootDirectory = path.resolve(
+      AppConfig.downloadRootDirectoryPath
+    );
+    fs.rmdirSync(downloadRootDirectory);
+
+  }
   await Importer.Initialize();
   await Importer.scrapeAndDownload();
 }
