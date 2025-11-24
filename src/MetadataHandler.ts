@@ -144,28 +144,34 @@ class MetadataHandler {
       `      <- Done embedding metadata into converted files for ${metadata.clipId}`
     );
   }
+  private cleanFlacMetadata(data:string|null|undefined):string{
+    if (data===null || data===undefined){
+      return "";
+    }
+    return data.replaceAll("\n","").replaceAll(os.EOL,"");
+  }
   private async embedMetadataInFlac(metadata: ISongData) {
     const flacPath = `${AppConfig.flacDirectoryPath}/${metadata.clipId}.flac`;
     console.log(`      -> Embedding metadata into ${flacPath}`);
     //convert metadata JSON to k=v form and save as id_vorbis.txt
     let lines: string[] = [];
-    lines.push(`TITLE=${metadata.title}`);
-    lines.push(`ARTIST=${metadata.artistName}`);
-    lines.push(`AI_MODEL=Suno ${metadata.model}`);
-    lines.push(`DATE=${metadata.creationDate?.toISOString()}`);
-    lines.push(`CONTACT=${metadata.songUrl}`);
-    lines.push(`SUNO_ID=${metadata.clipId}`);
-    lines.push(`DESCRIPTION=${metadata.style ?? "-N/A-"}`);
+    lines.push(`TITLE=${this.cleanFlacMetadata(metadata.title)}`);
+    lines.push(`ARTIST=${this.cleanFlacMetadata(metadata.artistName)}`);
+    lines.push(`AI_MODEL=Suno ${this.cleanFlacMetadata(metadata.model)}`);
+    lines.push(`DATE=${this.cleanFlacMetadata(metadata.creationDate?.toISOString())}`);
+    lines.push(`CONTACT=${this.cleanFlacMetadata(metadata.songUrl)}`);
+    lines.push(`SUNO_ID=${this.cleanFlacMetadata(metadata.clipId)}`);
+    lines.push(`DESCRIPTION=${this.cleanFlacMetadata(metadata.style ?? "-N/A-")}`);
     lines.push(`FAVORITE=${metadata.liked}`);
     if (metadata.tags) {
-      lines.push(`SUNO_TAGS=${metadata.tags.join(",")}`);
+      lines.push(`SUNO_TAGS=${this.cleanFlacMetadata(metadata.tags.join(","))}`);
     }
     lines.push(`SUNO_WEIRDNESS=${metadata.weirdness}%`);
     lines.push(`SUNO_STYLE_STRENGTH=${metadata.styleStrength}%`);
     lines.push(`SUNO_AUDIO_STRENGTH=${metadata.audioStrength}%`);
-    lines.push(`COMMENT=${this.commentTagMunger(metadata)}`);
+    lines.push(`COMMENT=${this.cleanFlacMetadata(this.commentTagMunger(metadata))}`);
     if (metadata.remixParent) {
-      lines.push(`SUNO_REMIX_PARENT=${metadata.remixParent}`);
+      lines.push(`SUNO_REMIX_PARENT=${this.cleanFlacMetadata(metadata.remixParent)}`);
     }
 
     const tmpFilePath = path.join(
@@ -217,6 +223,9 @@ class MetadataHandler {
   private removeBlankLinesFromArray(lines: string[]): string {
     try {
       const filteredLines = lines.filter((line) => line.trim() !== "");
+      filteredLines.forEach((line:string)=>{
+        line.replaceAll(os.EOL,'');
+      });
       const newContent = filteredLines.join(lines.join(os.EOL));
       return newContent
     } catch (error) {

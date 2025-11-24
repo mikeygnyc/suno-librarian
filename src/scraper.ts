@@ -53,6 +53,7 @@ export class Scraper {
       const url = frame.url(); // the new url
       if (url.includes("suno") && url.includes("song")) {
         console.log(url);
+        this.page.goBack();
       }
 
       // do something here...
@@ -451,12 +452,7 @@ export class Scraper {
                 throw err;
               });
             if (!firstRowProcessed) {
-              rowSpecTest.click({
-                offset: {
-                  x: 307,
-                  y: 21.75,
-                },
-              });
+              rowSpecTest.click();
             }
             rowSpec = rowSpecTest;
             foundIds.add(clipId);
