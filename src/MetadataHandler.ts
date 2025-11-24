@@ -180,7 +180,7 @@ class MetadataHandler {
       `${metadata.clipId}_vorbis.txt`
     );
 
-    fs.writeFileSync(tmpFilePath,this.removeBlankLinesFromArray(lines));
+    fs.writeFileSync(tmpFilePath,lines.join(os.EOL));
     let embeddedImage: boolean = false;
     let imagePath: string = "";
     if (AppConfig.embedImagesInConvertedFiles) {
@@ -220,19 +220,7 @@ class MetadataHandler {
     fs.rmSync(tmpFilePath);
     console.log(`      <- Done embedding metadata into ${flacPath}`);
   }
-  private removeBlankLinesFromArray(lines: string[]): string {
-    try {
-      const filteredLines = lines.filter((line) => line.trim() !== "");
-      filteredLines.forEach((line:string)=>{
-        line.replaceAll(os.EOL,'');
-      });
-      const newContent = filteredLines.join(lines.join(os.EOL));
-      return newContent
-    } catch (error) {
-      console.error(`Error cleaning comments ${lines}:`, error);
-    }
-    return "";
-  }
+
   private async embedMetadataInAlac(metadata: ISongData) {
     const alacPath = `${AppConfig.alacDirectoryPath}/${metadata.clipId}.m4a`;
     console.log(`      -> Embedding metadata into ${alacPath}`);

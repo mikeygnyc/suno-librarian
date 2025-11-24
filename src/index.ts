@@ -113,7 +113,7 @@ async function processOnly() {
   );
   let metadataFiles = fs.readdirSync(metadataPath);
   for (const mdataFile of metadataFiles) {
-    if (!mdataFile.includes(AppConfig.combinedSongsMetadataJsonFile)) {
+    if (!mdataFile.includes(AppConfig.combinedSongsMetadataJsonFile) && mdataFile.endsWith(".json")) {
       const filePath = path.join(metadataPath, mdataFile);
       const metaInfo = JSON.parse(
         fs.readFileSync(filePath, { encoding: "utf-8" }),MetadataProcessor.dateReviver
