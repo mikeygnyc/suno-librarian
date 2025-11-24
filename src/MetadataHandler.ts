@@ -150,15 +150,26 @@ class MetadataHandler {
     }
     return data.replaceAll("\n","").replaceAll(os.EOL,"");
   }
+  private checkedDateToString(date:Date|undefined|null):string{
+        let dateStr:string
+    try{
+      dateStr = date?date.toISOString():"";
+    } catch(err){
+      dateStr=new Date(Date.now()).toISOString();
+    }
+    return dateStr;
+  }
   private async embedMetadataInFlac(metadata: ISongData) {
     const flacPath = `${AppConfig.flacDirectoryPath}/${metadata.clipId}.flac`;
     console.log(`      -> Embedding metadata into ${flacPath}`);
     //convert metadata JSON to k=v form and save as id_vorbis.txt
+
+    
     let lines: string[] = [];
     lines.push(`TITLE=${this.cleanFlacMetadata(metadata.title)}`);
     lines.push(`ARTIST=${this.cleanFlacMetadata(metadata.artistName)}`);
     lines.push(`AI_MODEL=Suno ${this.cleanFlacMetadata(metadata.model)}`);
-    lines.push(`DATE=${this.cleanFlacMetadata(metadata.creationDate?.toISOString())}`);
+    lines.push(`DATE=${this.cleanFlacMetadata(this.checkedDateToString(metadata.creationDate))}`);
     lines.push(`CONTACT=${this.cleanFlacMetadata(metadata.songUrl)}`);
     lines.push(`SUNO_ID=${this.cleanFlacMetadata(metadata.clipId)}`);
     lines.push(`DESCRIPTION=${this.cleanFlacMetadata(metadata.style ?? "-N/A-")}`);
@@ -232,9 +243,7 @@ class MetadataHandler {
       "--title",
       metadata.title ?? "Untitled",
       "--year",
-      metadata.creationDate
-        ? metadata.creationDate.toISOString()
-        : new Date(Date.now()).toISOString(),
+      this.checkedDateToString(metadata.creationDate),
       "--description",
       metadata.style ?? "[No Prompt]",
       "--comment",
@@ -399,9 +408,7 @@ class MetadataHandler {
 
     const title = (metadata.title ?? "Untitled");
     const artist = (metadata.artistName ?? "Unknown Artist");
-    const year = metadata.creationDate
-      ? metadata.creationDate.toISOString()
-      : new Date(Date.now()).toISOString();
+    const year = this.checkedDateToString(metadata.creationDate);
     const description = metadata.style ?? "[No Prompt]";
     const comment = this.commentTagMunger(metadata);
     const website = metadata.songUrl; //WWW Audio File
