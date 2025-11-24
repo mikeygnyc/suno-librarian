@@ -6,7 +6,7 @@ import { AppConfig } from "./ConfigHandler.js";
 import { Importer } from "./scraper.js";
 import { ISongData } from "./ISongData.js";
 import { Converter } from "./FileHandler.js";
-import yargs from "yargs";
+import yargs from "yargs/yargs";
 import { MetadataProcessor } from "./MetadataHandler.js";
 const argv = yargs(process.argv.slice(2)).parseSync();
 

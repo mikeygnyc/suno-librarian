@@ -49,6 +49,14 @@ export class Scraper {
     } else {
       console.log("Scraper initialized");
     }
+    this.page.on("framenavigated", (frame: puppeteer.Frame) => {
+      const url = frame.url(); // the new url
+      if (url.includes("suno") && url.includes("song")) {
+        console.log(url);
+      }
+
+      // do something here...
+    });
   }
 
   browser!: puppeteer.Browser;
@@ -98,7 +106,6 @@ export class Scraper {
     return;
   }
 
-
   async sessionStarter() {
     this.session = await this.browser.target().createCDPSession();
     await this.session.send("Browser.setDownloadBehavior", {
@@ -124,7 +131,7 @@ export class Scraper {
     });
     return this.session;
   }
-  
+
   async getDataFromPage(session: puppeteer.CDPSession) {
     // --- LOAD AND PREPARE DATA ---
     console.log("Starting data loading...");
@@ -162,7 +169,9 @@ export class Scraper {
   }
   private async buildProcessingQueue(): Promise<ISongData[]> {
     // Create a queue of previously processed songs that need loading/downloading
-    const songsToProcess = Array.from(MetadataProcessor.allSongs.values()).filter(
+    const songsToProcess = Array.from(
+      MetadataProcessor.allSongs.values()
+    ).filter(
       (song) =>
         (AppConfig.useSunoMp3FileIfAvailable &&
           AppConfig.audioFormats.includes("mp3") &&
@@ -432,20 +441,32 @@ export class Scraper {
         for (const rowSpecTest of rowSpecs) {
           try {
             await rowSpecTest.scrollIntoView();
-            await delay(100);
-            await rowSpecTest.click({
-              offset: {
+            await delay(500);
+            await rowSpecTest
+              .clickablePoint({
                 x: 307,
                 y: 21.75,
-              },
-            });
+              })
+              .catch((err) => {
+                throw err;
+              });
+            if (!firstRowProcessed) {
+              rowSpecTest.click({
+                offset: {
+                  x: 307,
+                  y: 21.75,
+                },
+              });
+            }
             rowSpec = rowSpecTest;
             foundIds.add(clipId);
           } catch (err) {
+            //console.log(err);
             continue;
           }
         }
         //we found the good one, process it. keyboard actions work better than mouse for some reason
+        await delay(500);
         if (rowSpec !== null) {
           if (!firstRowProcessed) {
             //first row needs special handling to get focus right
@@ -453,9 +474,9 @@ export class Scraper {
             await this.page.keyboard.press("ArrowDown");
             await this.page.keyboard.press("ArrowUp");
           }
-          await this.page.keyboard.press("Enter");
-          await this.page.keyboard.press("ArrowLeft");
-          await delay(100);
+          await this.page.keyboard.press("Escape");
+          //await this.page.keyboard.press("Enter");
+          await delay(500);
           console.log(` -> Processing data for clipId: ${clipId}`);
           //these are all from the row itself
           const title =
@@ -612,7 +633,7 @@ export class Scraper {
             tags,
           });
 
-          await delay(30);
+          await delay(45);
         }
       } catch (err) {
         console.warn(`Failed to extract row  — skipping. Error:`, err);

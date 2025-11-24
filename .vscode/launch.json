@@ -7,9 +7,14 @@
       "request": "launch",
       "program": "${workspaceFolder}/dist/index.js",
       "cwd": "${workspaceFolder}",
-      "runtimeArgs": ["--enable-source-maps"],
+      "runtimeArgs": [
+        "--enable-source-maps"
+      ],
       "sourceMaps": true,
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "runtimeVersion": "24",
       "preLaunchTask": "tsc: build - tsconfig.json",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
@@ -20,10 +25,17 @@
       "request": "launch",
       "program": "${workspaceFolder}/dist/index.js",
       "cwd": "${workspaceFolder}",
-      "args": ["--processOnly"],
-      "runtimeArgs": ["--enable-source-maps"],
+      "args": [
+        "--processOnly"
+      ],
+      "runtimeArgs": [
+        "--enable-source-maps"
+      ],
       "sourceMaps": true,
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "runtimeVersion": "24",
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tsc: build - tsconfig.json",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
