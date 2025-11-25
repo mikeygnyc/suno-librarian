@@ -82,6 +82,14 @@ class MetadataHandler {
     );
     fs.writeFileSync(lyricsPath, `${metadata.lyrics}`);
   }
+  fileIsNotEmpty(path: string): boolean {
+    if (fs.existsSync(path)) {
+      return false;
+    } else {
+      const stats = fs.statSync(path);
+      return stats.size !== 0;
+    }
+  }
   async saveImage(metadata: ISongData, retry?: boolean) {
     if (AppConfig.saveImages || AppConfig.embedImagesInConvertedFiles) {
       const imageUrl: string = metadata.thumbnail ?? "";
@@ -103,8 +111,12 @@ class MetadataHandler {
             //@ts-ignore
             imageFile
           );
-          const stats = fs.statSync(imagePath);
-          if (stats.size === 0) {
+          if (imagePath) {
+            console.log(`      ->  Downloaded image to ${imagePath}`);
+            fs.writeFileSync(imagePath, imageBuffer);
+            metadata.imageStatus = "DOWNLOADED";
+          }
+           if (!this.fileIsNotEmpty(imagePath)) {
             if (!retry) {
               console.log(
                 `      ->  Downloaded image  ${imagePath} is zero bytes! Retrying!`
@@ -115,13 +127,8 @@ class MetadataHandler {
                 `      ->  Downloaded image  ${imagePath} is zero bytes! Retry failed!`
               );
               imagePath = "";
-              metadata.imageStatus="FAILED";
+              metadata.imageStatus = "FAILED";
             }
-          }
-          if (imagePath) {
-            console.log(`      ->  Downloaded image to ${imagePath}`);
-            fs.writeFileSync(imagePath, imageBuffer);
-            metadata.imageStatus="DOWNLOADED";
           }
         }
       }
@@ -229,6 +236,9 @@ class MetadataHandler {
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
+      if (!this.fileIsNotEmpty(imagePath)) {
+        this.saveImage(metadata, true);
+      }
       if (fs.existsSync(imagePath)) {
         embeddedImage = true;
       }
@@ -363,6 +373,9 @@ class MetadataHandler {
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
+      if (!this.fileIsNotEmpty(imagePath)) {
+        this.saveImage(metadata, true);
+      }
       if (fs.existsSync(imagePath)) {
         parsleyArgs = [...parsleyArgs, "--artwork", imagePath];
       }
@@ -490,6 +503,9 @@ class MetadataHandler {
         //@ts-ignore
         imageFile
       );
+      if (!this.fileIsNotEmpty(imagePath)) {
+        this.saveImage(metadata, true);
+      }
       if (fs.existsSync(imagePath)) {
         kid3Cmds = [
           ...kid3Cmds,
