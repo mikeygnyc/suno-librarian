@@ -82,7 +82,7 @@ class MetadataHandler {
     );
     fs.writeFileSync(lyricsPath, `${metadata.lyrics}`);
   }
-  async saveImage(metadata: ISongData) {
+  async saveImage(metadata: ISongData, retry?: boolean) {
     if (AppConfig.saveImages || AppConfig.embedImagesInConvertedFiles) {
       const imageUrl: string = metadata.thumbnail ?? "";
       // const imgUrlArr: string[] = imageUrl.split("/");
@@ -97,20 +97,36 @@ class MetadataHandler {
         } else {
           const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
           //@ts-ignore
-          const imagePath = path.join(
+          let imagePath = path.join(
             //@ts-ignore
             AppConfig.imagesDirectoryPath,
             //@ts-ignore
             imageFile
           );
-
+          const stats = fs.statSync(imagePath);
+          if (stats.size === 0) {
+            if (!retry) {
+              console.log(
+                `      ->  Downloaded image  ${imagePath} is zero bytes! Retrying!`
+              );
+              this.saveImage(metadata, true);
+            } else {
+              console.log(
+                `      ->  Downloaded image  ${imagePath} is zero bytes! Retry failed!`
+              );
+              imagePath = "";
+              metadata.imageStatus="FAILED";
+            }
+          }
           if (imagePath) {
             console.log(`      ->  Downloaded image to ${imagePath}`);
             fs.writeFileSync(imagePath, imageBuffer);
+            metadata.imageStatus="DOWNLOADED";
           }
         }
       }
     }
+    this.saveSongMetadata(metadata);
   }
   async embedMetadataInFile(metadata: ISongData) {
     console.log(
@@ -144,18 +160,18 @@ class MetadataHandler {
       `      <- Done embedding metadata into converted files for ${metadata.clipId}`
     );
   }
-  private cleanFlacMetadata(data:string|null|undefined):string{
-    if (data===null || data===undefined){
+  private cleanFlacMetadata(data: string | null | undefined): string {
+    if (data === null || data === undefined) {
       return "";
     }
-    return data.replaceAll("\n","").replaceAll(os.EOL,"");
+    return data.replaceAll("\n", "").replaceAll(os.EOL, "");
   }
-  private checkedDateToString(date:Date|undefined|null):string{
-        let dateStr:string
-    try{
-      dateStr = date?date.toISOString():"";
-    } catch(err){
-      dateStr=new Date(Date.now()).toISOString();
+  private checkedDateToString(date: Date | undefined | null): string {
+    let dateStr: string;
+    try {
+      dateStr = date ? date.toISOString() : "";
+    } catch (err) {
+      dateStr = new Date(Date.now()).toISOString();
     }
     return dateStr;
   }
@@ -164,25 +180,36 @@ class MetadataHandler {
     console.log(`      -> Embedding metadata into ${flacPath}`);
     //convert metadata JSON to k=v form and save as id_vorbis.txt
 
-    
     let lines: string[] = [];
     lines.push(`TITLE=${this.cleanFlacMetadata(metadata.title)}`);
     lines.push(`ARTIST=${this.cleanFlacMetadata(metadata.artistName)}`);
     lines.push(`AI_MODEL=Suno ${this.cleanFlacMetadata(metadata.model)}`);
-    lines.push(`DATE=${this.cleanFlacMetadata(this.checkedDateToString(metadata.creationDate))}`);
+    lines.push(
+      `DATE=${this.cleanFlacMetadata(
+        this.checkedDateToString(metadata.creationDate)
+      )}`
+    );
     lines.push(`CONTACT=${this.cleanFlacMetadata(metadata.songUrl)}`);
     lines.push(`SUNO_ID=${this.cleanFlacMetadata(metadata.clipId)}`);
-    lines.push(`DESCRIPTION=${this.cleanFlacMetadata(metadata.style ?? "-N/A-")}`);
+    lines.push(
+      `DESCRIPTION=${this.cleanFlacMetadata(metadata.style ?? "-N/A-")}`
+    );
     lines.push(`FAVORITE=${metadata.liked}`);
     if (metadata.tags) {
-      lines.push(`SUNO_TAGS=${this.cleanFlacMetadata(metadata.tags.join(","))}`);
+      lines.push(
+        `SUNO_TAGS=${this.cleanFlacMetadata(metadata.tags.join(","))}`
+      );
     }
     lines.push(`SUNO_WEIRDNESS=${metadata.weirdness}%`);
     lines.push(`SUNO_STYLE_STRENGTH=${metadata.styleStrength}%`);
     lines.push(`SUNO_AUDIO_STRENGTH=${metadata.audioStrength}%`);
-    lines.push(`COMMENT=${this.cleanFlacMetadata(this.commentTagMunger(metadata))}`);
+    lines.push(
+      `COMMENT=${this.cleanFlacMetadata(this.commentTagMunger(metadata))}`
+    );
     if (metadata.remixParent) {
-      lines.push(`SUNO_REMIX_PARENT=${this.cleanFlacMetadata(metadata.remixParent)}`);
+      lines.push(
+        `SUNO_REMIX_PARENT=${this.cleanFlacMetadata(metadata.remixParent)}`
+      );
     }
 
     const tmpFilePath = path.join(
@@ -191,7 +218,7 @@ class MetadataHandler {
       `${metadata.clipId}_vorbis.txt`
     );
 
-    fs.writeFileSync(tmpFilePath,lines.join(os.EOL));
+    fs.writeFileSync(tmpFilePath, lines.join(os.EOL));
     let embeddedImage: boolean = false;
     let imagePath: string = "";
     if (AppConfig.embedImagesInConvertedFiles) {
@@ -202,6 +229,9 @@ class MetadataHandler {
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
+      if (fs.existsSync(imagePath)) {
+        embeddedImage = true;
+      }
     }
     const metadataArgs: string[] = [
       `--preserve-modtime`,
@@ -333,7 +363,9 @@ class MetadataHandler {
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
-      parsleyArgs = [...parsleyArgs, "--artwork", imagePath];
+      if (fs.existsSync(imagePath)) {
+        parsleyArgs = [...parsleyArgs, "--artwork", imagePath];
+      }
     }
     console.log(
       `      ->  running atomic parsley with command: atomicparsley ${parsleyArgs.join(
@@ -376,7 +408,7 @@ class MetadataHandler {
       `set ${commandType}:'${path}' '${label}'`
     );
   }
-  replacer(value:string):string{
+  replacer(value: string): string {
     let retval = value.replaceAll(`'`, `\\'`);
     console.log(retval);
     return retval;
@@ -406,8 +438,8 @@ class MetadataHandler {
     const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
     console.log(`      -> Embedding metadata into ${mp3Path}`);
 
-    const title = (metadata.title ?? "Untitled");
-    const artist = (metadata.artistName ?? "Unknown Artist");
+    const title = metadata.title ?? "Untitled";
+    const artist = metadata.artistName ?? "Unknown Artist";
     const year = this.checkedDateToString(metadata.creationDate);
     const description = metadata.style ?? "[No Prompt]";
     const comment = this.commentTagMunger(metadata);
@@ -458,10 +490,16 @@ class MetadataHandler {
         //@ts-ignore
         imageFile
       );
-      kid3Cmds = [
-        ...kid3Cmds,
-        ...this.createKid3FileCmd("picture", imagePath, "Picture Description"),
-      ];
+      if (fs.existsSync(imagePath)) {
+        kid3Cmds = [
+          ...kid3Cmds,
+          ...this.createKid3FileCmd(
+            "picture",
+            imagePath,
+            "Picture Description"
+          ),
+        ];
+      }
     }
     kid3Cmds = [
       ...kid3Cmds,

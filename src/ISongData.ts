@@ -11,6 +11,7 @@ export interface ISongData {
   flacStatus?: TFileStatus;
   alacStatus?: TFileStatus;
   wavStatus?: TFileStatus;
+  imageStatus?:TFileStatus;
   songUrl: string;
   liked: boolean;
   artistName?: string|null;
