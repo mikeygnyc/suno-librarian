@@ -403,7 +403,6 @@ export class Scraper {
     if (this.pagesSearched > 0) {
       console.log("Moving to next page");
       await GlobalPageMethods.paginationOps(this.page, true, false);
-      await delay(5000);
     } else {
       await this.findScrollContainer();
     }

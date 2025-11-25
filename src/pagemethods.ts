@@ -5,59 +5,119 @@ import fs from "fs";
 import { AppConfig } from "./ConfigHandler";
 export class PageMethods {
   constructor() {}
+  async isSongOnPage(clipId: string) {
+    let rows = await Importer.page.$$(Importer.ROW_SELECTOR);
+
+    // // Wait until rows exist
+    // if (!rows || rows.length === 0) {
+    //   console.log(`Waiting for rows`);
+    //   while (!rows) {
+    //     console.log(`...continuing to wait for rows`);
+    //     rows = await Importer.page.$$(Importer.ROW_SELECTOR);
+    //   }
+    // }
+    const foundRow = await this.asyncFind(rows, (row) =>
+      this.rowExists(clipId, row)
+    );
+
+    if (foundRow) {
+      console.log(`Found row for clipId ${clipId}`);
+      return true;
+    }
+
+    console.log(`ClipId ${clipId} not found`);
+    return false;
+  }
+  rowExists(clipId: string, row: puppeteer.ElementHandle): Promise<boolean> {
+    return row
+      .evaluate((r) => r.getAttribute("data-clip-id"))
+      .then(
+        (idFoundStr: string | null) => {
+          return idFoundStr === clipId;
+        },
+        (reason: any) => {
+          return false;
+        }
+      );
+  }
+  async asyncFind<T>(
+    array: T[],
+    predicate: (item: T) => Promise<boolean>
+  ): Promise<T | undefined> {
+    for (const item of array) {
+      if (await predicate(item)) {
+        return item; // Return the first item that satisfies the async predicate
+      }
+    }
+    return undefined; // No item found
+  }
+
   async scrollSongIntoView(
     page: puppeteer.Page,
     clipId: string
   ): Promise<puppeteer.ElementHandle | null> {
-    const songSelector = `div[data-clip-id="${clipId}"]`;
-    let songRow = await Importer.currentScrollContainer.$(songSelector);
-
-    if (songRow) {
-      await songRow.evaluate((el) => el.scrollIntoView({ block: "center" }));
-      await delay(250);
-      return songRow;
-    }
-
-    console.log(`  -> Song ${clipId} not visible. Scrolling to find...`);
-    let stallCount = 0;
     while (Importer.morePagesAvailable) {
-      while (stallCount < 2) {
-        await Importer.currentScrollContainer.evaluate((el) => {
-          el.scrollTop += el.clientHeight * 0.8;
-        });
-        await delay(1500);
+      if (await this.isSongOnPage(clipId)) {
+        const songSelector = `div[data-clip-id="${clipId}"]`;
+        let songRow = await Importer.currentScrollContainer.$(songSelector);
 
-        songRow = await Importer.currentScrollContainer.$(songSelector);
         if (songRow) {
           await songRow.evaluate((el) =>
             el.scrollIntoView({ block: "center" })
           );
           await delay(250);
-          console.log(`  -> Found ${clipId} after scrolling.`);
           return songRow;
         }
 
-        const isAtBottom = await Importer.currentScrollContainer.evaluate(
-          (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
-        );
+        console.log(`  -> Song ${clipId} not visible. Scrolling to find...`);
+        let stallCount = 0;
+        while (stallCount < 2) {
+          await Importer.currentScrollContainer.evaluate((el) => {
+            el.scrollTop += el.clientHeight * 0.8;
+          });
+          await delay(1500);
 
-        if (isAtBottom) {
-          console.log(
-            "  -> Reached bottom. Resetting to top for another pass."
+          songRow = await Importer.currentScrollContainer.$(songSelector);
+          if (songRow) {
+            await songRow.evaluate((el) =>
+              el.scrollIntoView({ block: "center" })
+            );
+            await delay(250);
+            console.log(`  -> Found ${clipId} after scrolling.`);
+            return songRow;
+          }
+
+          const isAtBottom = await Importer.currentScrollContainer.evaluate(
+            (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 20
           );
-          await Importer.currentScrollContainer.evaluate((el) =>
-            el.scrollTo(0, 0)
+
+          if (isAtBottom) {
+            console.log(
+              "  -> Reached bottom. Resetting to top for another pass."
+            );
+            await Importer.currentScrollContainer.evaluate((el) =>
+              el.scrollTo(0, 0)
+            );
+            stallCount++;
+            await delay(700);
+          }
+        }
+
+        console.error(`  -> Could not find song ${clipId} after scrolling.`);
+        return null;
+      } else {
+        if (Importer.morePagesAvailable) {
+          console.log("  -> Reached bottom again. Going to next page.");
+          const navigated = await this.paginationOps(page, true, false);
+        } else {
+          console.error(
+            `  -> Could not find song ${clipId} after searching pages.`
           );
-          stallCount++;
-          await delay(700);
+          return null;
         }
       }
-      console.log("  -> Reached bottom again. Going to next page.");
-      stallCount = 0;
-      const navigated = await this.paginationOps(page, true, false);
     }
-
-    console.error(`  -> Could not find song ${clipId} after scrolling.`);
+    console.error(`  -> Could not find song ${clipId} after searching pages.`);
     return null;
   }
   async clickVisibleMoreButton(
@@ -204,12 +264,14 @@ export class PageMethods {
     return 1;
   }
   currentPage: number = 1;
+
   async paginationOps(
     page: puppeteer.Page,
     goToNext: boolean,
     checkOnly: boolean
   ): Promise<boolean> {
     let success: boolean = false;
+
     if (goToNext) {
       success = await this.clickNextPageButton(page, checkOnly);
       if (success) {
@@ -245,8 +307,9 @@ export class PageMethods {
     page.mainFrame();
     Importer.session = await Importer.sessionStarter();
     await Importer.findScrollContainer();
-    await delay(3000);
     this.currentPage = await this.getCurrentPageNumber(page);
+    await delay(1500);//TODO this should be dynamic
+
     console.log(`  -> Current page is now ${this.currentPage}`);
     return success;
   }
