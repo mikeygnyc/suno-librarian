@@ -87,6 +87,9 @@ class MetadataHandler {
       return false;
     } else {
       const stats = fs.statSync(path);
+      if (stats.size===0){
+        fs.rmSync(path);
+      }
       return stats.size !== 0;
     }
   }
