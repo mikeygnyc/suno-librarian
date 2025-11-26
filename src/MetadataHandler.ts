@@ -426,7 +426,6 @@ class MetadataHandler {
   }
   replacer(value: string): string {
     let retval = value.replaceAll(`'`, `\\'`);
-    console.log(retval);
     return retval;
   }
   private createKid3Cmd(fieldName: string, value: string): string[] {
