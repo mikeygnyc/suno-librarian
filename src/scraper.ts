@@ -483,7 +483,7 @@ export class Scraper {
               "div.flex.flex-row > div[title]",
               "title"
             )) ?? null;
-          const thumbnail =
+          let thumbnail =
             (await this.rowGetAttrOrNull(
               row,
               'img[alt="Song Image"]',
@@ -604,7 +604,12 @@ export class Scraper {
                   .filter(Boolean) as string[]
             );
           }
-
+          if (thumbnail?.includes("default")||thumbnail?.includes("defualt")){
+            //check for mispelling too
+            //these default images are locked, can't use them
+            console.log(`Found default images for ${clipId}. Skipping image.`);
+            thumbnail="";
+          }
           discoveredSongs.push({
             title,
             clipId,

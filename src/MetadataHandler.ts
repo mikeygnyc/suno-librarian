@@ -53,7 +53,7 @@ class MetadataHandler {
   }
   allSongs = new Map<string, ISongData>();
 
-  async saveSongMetadata(meta: ISongData) {
+  async saveSongMetadata(meta: ISongData, imageOriginated?: boolean) {
     if (!AppConfig.saveMetadataSidecarFiles) {
       return;
     }
@@ -69,7 +69,9 @@ class MetadataHandler {
     delete cloneMeta.wavStatus;
     fs.writeFileSync(metadataPath, JSON.stringify(cloneMeta, null, 2));
     this.saveLyrics(meta);
-    await this.saveImage(meta);
+    if (!imageOriginated) {
+      await this.saveImage(meta);
+    }
   }
   saveLyrics(metadata: ISongData) {
     if (!AppConfig.saveLyricsInTextFiles && !AppConfig.embedLyricsInMetadata) {
@@ -93,7 +95,7 @@ class MetadataHandler {
       return stats.size === 0;
     }
   }
-  async saveImage(metadata: ISongData, retry?: boolean) {
+  async saveImage(metadata: ISongData) {
     if (AppConfig.saveImages || AppConfig.embedImagesInConvertedFiles) {
       const imageUrl: string = metadata.thumbnail ?? "";
       // const imgUrlArr: string[] = imageUrl.split("/");
@@ -120,24 +122,17 @@ class MetadataHandler {
             metadata.imageStatus = "DOWNLOADED";
           }
           if (this.fileIsEmpty(imagePath)) {
-            if (!retry) {
-              console.log(
-                `      ->  Downloaded image  ${imagePath} is zero bytes! Retrying.`
-              );
-              this.saveImage(metadata, true);
-            } else {
-              console.log(
-                `      ->  Downloaded image  ${imagePath} is zero bytes! Retry failed!`
-              );
-              imagePath = "";
-              metadata.imageStatus = "FAILED";
-              metadata.thumbnail = "";
-            }
+            console.log(
+              `      ->  Downloaded image  ${imagePath} is zero bytes!`
+            );
+            imagePath = "";
+            metadata.imageStatus = "FAILED";
+            metadata.thumbnail = "";
           }
         }
       }
     }
-    this.saveSongMetadata(metadata);
+    this.saveSongMetadata(metadata,true);
     this.saveMainMetadataFile();
   }
   async embedMetadataInFile(metadata: ISongData) {
@@ -506,7 +501,7 @@ class MetadataHandler {
       if (AppConfig.embedImagesInConvertedFiles) {
         //@ts-ignore
         const imageFile = `${metadata.clipId}${path.extname(
-          metadata.thumbnail??""
+          metadata.thumbnail ?? ""
         )}`;
         const imagePath = path.join(
           //@ts-ignore
