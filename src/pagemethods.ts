@@ -56,7 +56,8 @@ export class PageMethods {
     page: puppeteer.Page,
     clipId: string
   ): Promise<puppeteer.ElementHandle | null> {
-    while (Importer.morePagesAvailable) {
+    while (true) {
+    
       if (await this.isSongOnPage(clipId)) {
         const songSelector = `div[data-clip-id="${clipId}"]`;
         let songRow = await Importer.currentScrollContainer.$(songSelector);
@@ -117,8 +118,7 @@ export class PageMethods {
         }
       }
     }
-    console.error(`  -> Could not find song ${clipId} after searching pages.`);
-    return null;
+   
   }
   async clickVisibleMoreButton(
     page: puppeteer.Page,

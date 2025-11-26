@@ -140,7 +140,7 @@ export class Scraper {
 
     // Scrape page for all songs to discover new ones
 
-    while (this.pagesSearched === 0 || this.morePagesAvailable) {
+    while (true) {
       await this.discoverSongs();
       const songsToProcess = await this.buildProcessingQueue();
       await this.processSongs(songsToProcess);
@@ -162,11 +162,6 @@ export class Scraper {
         }
       }
     }
-    if (!this.morePagesAvailable) {
-      console.log("--- No more pages found. ---");
-    }
-
-    return;
   }
   private async buildProcessingQueue(): Promise<ISongData[]> {
     // Create a queue of previously processed songs that need loading/downloading
@@ -196,7 +191,10 @@ export class Scraper {
         } (${song.clipId}) ---`
       );
       const songObject = MetadataProcessor.allSongs.get(song.clipId)!;
-
+      if (song.wavStatus==="FAILED" || song.wavStatus==="SKIPPED"){
+        //back up one page before searching.
+        await GlobalPageMethods.paginationOps(this.page,false,false);
+      }
       const songRow = await GlobalPageMethods.scrollSongIntoView(
         this.page,
         songObject.clipId
