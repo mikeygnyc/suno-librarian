@@ -74,15 +74,20 @@ export class FileHandler {
           try {
             const mp3Path = `${AppConfig.mp3DirectoryPath}/${metadata.clipId}.mp3`;
             console.log(`        ->  Converting ${metadata.clipId} to mp3`);
-            const imagePath = path.join(
-                //@ts-ignore
-                AppConfig.imagesDirectoryPath,
-                //@ts-ignore
-                `${metadata.clipId}${path.extname(metadata.thumbnail)}`
-              );
+            let imagePath = path.join(
+              //@ts-ignore
+              AppConfig.imagesDirectoryPath,
+              //@ts-ignore
+              `${metadata.clipId}${path.extname(metadata.thumbnail)}`
+            );
+
+            if (!fs.existsSync(imagePath)) {
+              imagePath = "";
+            }
+
             await execFileAsync(
               "ffmpeg",
-              this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3",imagePath)
+              this.createFfmpegExecArgs(mp3Path, wavFilePath, "mp3", imagePath)
             );
             metadata.mp3Status = "CREATED";
           } catch (error) {
@@ -236,7 +241,7 @@ export class FileHandler {
     outputPath: string,
     wavPath: string,
     format: "alac" | "flac" | "mp3",
-    imagePath?:string
+    imagePath?: string
   ): string[] {
     let wavPart: string[] = ["-y", "-i", wavPath];
     let conversionPart: string[] = [];
@@ -248,28 +253,29 @@ export class FileHandler {
         conversionPart = ["-c:a", "flac"];
         break;
       case "mp3":
-        if (AppConfig.embedImagesInConvertedFiles && imagePath){
-          let imageArgs:string[] = [
-              "-i",
-              imagePath,
-              "-map",
-              "0:a",
-              "-map",
-              "1:v",
-              "-c:1",
-              "copy",
-              "-id3v2_version",
-              "4",
-              "-metadata:s:v",
-              'title="Album cover"',
-              "-metadata:s:v",
-              'comment="Cover (front)"'
-          ]
-          wavPart = wavPart.concat(imageArgs);
+        let mainArgs: string[] = [];
+        if (AppConfig.embedImagesInConvertedFiles && imagePath) {
+          mainArgs = [
+            "-i",
+            imagePath,
+            "-map",
+            "0:a",
+            "-map",
+            "1:v",
+            "-c:1",
+            "copy",
+            "-id3v2_version",
+            "4",
+            "-metadata:s:v",
+            'title="Album cover"',
+            "-metadata:s:v",
+            'comment="Cover (front)"',
+          ];
+        } else {
+          mainArgs = ["-map", "0:a"];
         }
-
+        wavPart = wavPart.concat(mainArgs);
         conversionPart = [
-          
           "-c:a",
           "libmp3lame",
           "-b:a",

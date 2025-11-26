@@ -82,15 +82,15 @@ class MetadataHandler {
     );
     fs.writeFileSync(lyricsPath, `${metadata.lyrics}`);
   }
-  fileIsNotEmpty(path: string): boolean {
-    if (fs.existsSync(path)) {
-      return false;
+  fileIsEmpty(path: string): boolean {
+    if (!fs.existsSync(path)) {
+      return true;
     } else {
       const stats = fs.statSync(path);
-      if (stats.size===0){
+      if (stats.size === 0) {
         fs.rmSync(path);
       }
-      return stats.size !== 0;
+      return stats.size === 0;
     }
   }
   async saveImage(metadata: ISongData, retry?: boolean) {
@@ -119,10 +119,10 @@ class MetadataHandler {
             fs.writeFileSync(imagePath, imageBuffer);
             metadata.imageStatus = "DOWNLOADED";
           }
-           if (!this.fileIsNotEmpty(imagePath)) {
+          if (this.fileIsEmpty(imagePath)) {
             if (!retry) {
               console.log(
-                `      ->  Downloaded image  ${imagePath} is zero bytes! Retrying!`
+                `      ->  Downloaded image  ${imagePath} is zero bytes! Retrying.`
               );
               this.saveImage(metadata, true);
             } else {
@@ -131,12 +131,14 @@ class MetadataHandler {
               );
               imagePath = "";
               metadata.imageStatus = "FAILED";
+              metadata.thumbnail = "";
             }
           }
         }
       }
     }
     this.saveSongMetadata(metadata);
+    this.saveMainMetadataFile();
   }
   async embedMetadataInFile(metadata: ISongData) {
     console.log(
@@ -231,7 +233,11 @@ class MetadataHandler {
     fs.writeFileSync(tmpFilePath, lines.join(os.EOL));
     let embeddedImage: boolean = false;
     let imagePath: string = "";
-    if (AppConfig.embedImagesInConvertedFiles) {
+    if (
+      AppConfig.embedImagesInConvertedFiles &&
+      metadata.imageStatus !== "FAILED" &&
+      metadata.thumbnail !== ""
+    ) {
       embeddedImage = true;
       imagePath = path.join(
         //@ts-ignore
@@ -239,9 +245,6 @@ class MetadataHandler {
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
-      if (!this.fileIsNotEmpty(imagePath)) {
-        this.saveImage(metadata, true);
-      }
       if (fs.existsSync(imagePath)) {
         embeddedImage = true;
       }
@@ -369,16 +372,18 @@ class MetadataHandler {
       );
       parsleyArgs = [...parsleyArgs, "--lyricsFile", lyricsFilePath];
     }
-    if (AppConfig.embedImagesInConvertedFiles) {
+    if (
+      AppConfig.embedImagesInConvertedFiles &&
+      metadata.imageStatus !== "FAILED" &&
+      metadata.thumbnail !== ""
+    ) {
       const imagePath = path.join(
         //@ts-ignore
         AppConfig.imagesDirectoryPath,
         //@ts-ignore
         `${metadata.clipId}${path.extname(metadata.thumbnail)}`
       );
-      if (!this.fileIsNotEmpty(imagePath)) {
-        this.saveImage(metadata, true);
-      }
+
       if (fs.existsSync(imagePath)) {
         parsleyArgs = [...parsleyArgs, "--artwork", imagePath];
       }
@@ -498,43 +503,46 @@ class MetadataHandler {
       ];
     }
     if (AppConfig.embedImagesInConvertedFiles) {
-      //@ts-ignore
-      const imageFile = `${metadata.clipId}${path.extname(metadata.thumbnail)}`;
-      const imagePath = path.join(
+      if (AppConfig.embedImagesInConvertedFiles) {
         //@ts-ignore
-        AppConfig.imagesDirectoryPath,
-        //@ts-ignore
-        imageFile
-      );
-      if (!this.fileIsNotEmpty(imagePath)) {
-        this.saveImage(metadata, true);
+        const imageFile = `${metadata.clipId}${path.extname(
+          metadata.thumbnail??""
+        )}`;
+        const imagePath = path.join(
+          //@ts-ignore
+          AppConfig.imagesDirectoryPath,
+          //@ts-ignore
+          imageFile
+        );
+
+        if (fs.existsSync(imagePath)) {
+          kid3Cmds = [
+            ...kid3Cmds,
+            ...this.createKid3FileCmd(
+              "picture",
+              imagePath,
+              "Picture Description"
+            ),
+          ];
+        }
       }
-      if (fs.existsSync(imagePath)) {
-        kid3Cmds = [
-          ...kid3Cmds,
-          ...this.createKid3FileCmd(
-            "picture",
-            imagePath,
-            "Picture Description"
-          ),
-        ];
-      }
+      kid3Cmds = [
+        ...kid3Cmds,
+        ...this.createKid3CliCommandAsArgs("save"),
+        mp3Path,
+      ];
+
+      console.log(`      ->  running kid3-cli`);
+      console.log(`      ->  sending kid3-cli ${kid3Cmds.join(" ")}`);
+      await execFileAsync("kid3-cli", kid3Cmds);
     }
-    kid3Cmds = [
-      ...kid3Cmds,
-      ...this.createKid3CliCommandAsArgs("save"),
-      mp3Path,
-    ];
 
-    console.log(`      ->  running kid3-cli`);
-    console.log(`      ->  sending kid3-cli ${kid3Cmds.join(" ")}`);
-    await execFileAsync("kid3-cli", kid3Cmds);
-
-    const kid3JsonPath = path.join(
-      AppConfig.downloadRootDirectoryPath,
-      "flac",
-      `${metadata.clipId}.json`
-    );
+    if (
+      AppConfig.embedImagesInConvertedFiles &&
+      metadata.imageStatus !== "FAILED" &&
+      metadata.thumbnail !== ""
+    ) {
+    }
   }
 
   private commentTagMunger(metadata: ISongData): string {

@@ -17,7 +17,8 @@
       "runtimeVersion": "24",
       "preLaunchTask": "tsc: build - tsconfig.json",
       "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen"
+      "internalConsoleOptions": "neverOpen",
+      
     },
     {
       "name": "Launch (compiled ESM) Process Only",
@@ -38,7 +39,8 @@
       ],
       "preLaunchTask": "tsc: build - tsconfig.json",
       "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen"
+      "internalConsoleOptions": "neverOpen",
+     
     }
   ]
 }
