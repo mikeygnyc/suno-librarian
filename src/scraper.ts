@@ -91,7 +91,7 @@ export class Scraper {
   }
   currentScrollContainer!: puppeteer.ElementHandle<Element>;
   async findScrollContainer() {
-    const scrollContainerSelector = 'div[id*="tabpanel-songs"]';
+    const scrollContainerSelector = 'div[class*="clip-browser-list-scroller"]';
     await this.page.waitForSelector(scrollContainerSelector, {
       timeout: 40000,
     });
@@ -475,7 +475,14 @@ export class Scraper {
           const title =
             (await this.rowQueryTextOrNull(row, "span[title] a span")) ??
             "Untitled";
-          const style =
+'div[class*="clip-row"]';
+
+//div/div[1]/div[3]/div[2]
+//or 
+//div[1]/div[1]/div[3]/div[2]
+
+//::-p-xpath(//*  
+            const style =
             (await this.rowGetAttrOrNull(
               row,
               "div.flex.flex-row > div[title]",
@@ -484,12 +491,12 @@ export class Scraper {
           let thumbnail =
             (await this.rowGetAttrOrNull(
               row,
-              'img[alt="Song Image"]',
+              'img',
               "data-src"
             )) ||
             (await this.rowGetAttrOrNull(
               row,
-              'img[alt="Song Image"]',
+              'img',
               "src"
             )) ||
             null;
@@ -554,9 +561,24 @@ export class Scraper {
           const remixParent = remixParentHref?.split("/")[2] ?? undefined;
           //control setting values are a little more complex
           const controlVals = new Map<string, string>();
-          for (let i = 1; i <= 3; i++) {
-            const nameXpath = `${this.CONTROL_NAME_PREFIX}[${i}]/span[1]/text()[1]`;
-            const valueXpath = `${this.CONTROL_NAME_PREFIX}[${i}]/span[2]`;
+          for (let i = 2; i <= 5; i++) {
+
+            // /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[2]/span[1]
+            // weirdness name
+            // /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[2]/span[2]
+            // weirdness value
+
+            // /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[3]/span[1]
+            // style name
+            //  /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[3]/span[2]
+            // style value
+            // /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[4]/span[1]
+            // audio name
+            // /html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[4]/span[2]
+            // audio value
+            // */
+            const nameXpath = `${this.CONTROL_NAME_PREFIX}/div[${i}]/span[1]/text()[1]`;
+            const valueXpath = `${this.CONTROL_NAME_PREFIX}[${i}]/span[2]/text()[1]`;
             const key =
               await GlobalPageMethods.getValueFromElementByXpathByPage(
                 this.page,
@@ -576,11 +598,11 @@ export class Scraper {
             50
           );
           const styleStrength = this.parsePercentDefault(
-            controlVals.get("Style Strength"),
+            controlVals.get("Style Influence"),
             50
           );
           const audioStrength = this.parsePercentDefault(
-            controlVals.get("Audio Strength"),
+            controlVals.get("Audio Influence"),
             25
           );
 
@@ -597,9 +619,7 @@ export class Scraper {
           ) {
             tags = await tagsElementHandle.evaluate(
               (el: Element) =>
-                Array.from(el.querySelectorAll("div, span, a"))
-                  .map((x) => x.textContent?.trim())
-                  .filter(Boolean) as string[]
+                el.textContent.split(",").map((t) => t.trim())
             );
           }
           if (thumbnail?.includes("default")||thumbnail?.includes("defualt")){
@@ -709,16 +729,15 @@ export class Scraper {
   morePagesAvailable: boolean = true;
   pagesSearched: number = 0;
   // Configuration / constants
-  ROW_SELECTOR = 'div[data-testid="song-row"]';
-  CLICK_ROW_XPATH =
-    '::-p-xpath(//*[@data-testid="song-row"]/div/div/div[2]/div[1]/div[1])';
-  DETAIL_PANEL_ANCHOR_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]`; // root of detail panel
-  ARTIST_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[1]/div/a`;
-  LYRICS_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[1]`;
-  CREATION_DATE_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/span[2]`;
-  REMIX_PARENT_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[4]/div/div/div/div[2]/div/div[2]/a`;
-  CONTROL_NAME_PREFIX = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[3]/ul/li`;
-  TAGS_XPATH = `/html/body/div[2]/div[1]/div[2]/div[1]/div/div[3]/div/div/div[1]/div[2]/div[2]/div[2]/div`;
+  
+  ROW_SELECTOR = 'div[class*="clip-row"]';
+  ARTIST_XPATH = `/html/body/div[1]/div[1]/div[1]/div[2]/div/div/div/span/div/span/div[2]/p[1]`;
+  LYRICS_XPATH = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[6]/div/text()`;
+  CREATION_DATE_XPATH = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[7]`;
+  ;
+  REMIX_PARENT_XPATH = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[5]/div/div[2]/div[2]/a`;
+  CONTROL_NAME_PREFIX = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]`;
+  TAGS_XPATH = `/html/body/div[1]/div[1]/div[2]/div[1]/div/div/div/div/div[2]/div/div/div/div[2]/div[4]/div[1]/div`;
 
   CLICK_RETRIES = 3;
   CLICK_RETRY_DELAY_MS = 300;
